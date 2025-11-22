@@ -22,6 +22,7 @@ from app.container import (
     get_session_repo,
     get_transcode_service,
     get_tts_service,
+    get_rate_limiter,
 )
 
 
@@ -83,6 +84,15 @@ async def create_session(
     req: CreateTTSSessionRequest,
     request: Request,
 ) -> CreateTTSSessionResponse:
+    # Simple IP-based rate limiting for session creation.
+    client_host = request.client.host if request.client else "unknown"
+    limiter = get_rate_limiter()
+    if not limiter.allow_request(client_host):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded for this client",
+        )
+
     try:
         session = get_tts_service().create_session(req)
     except ValueError as exc:

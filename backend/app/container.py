@@ -6,6 +6,7 @@ from app.providers import ProviderRegistry
 from app.repositories import InMemoryTTSSessionRepository
 from app.services import TTSService, AudioTranscodeService
 from app.services.circuit_breaker import CircuitBreakerRegistry
+from app.services.rate_limiter import RateLimiter
 
 
 @lru_cache
@@ -26,6 +27,11 @@ def get_transcode_service() -> AudioTranscodeService:
 @lru_cache
 def get_circuit_breaker_registry() -> CircuitBreakerRegistry:
   return CircuitBreakerRegistry()
+
+
+@lru_cache
+def get_rate_limiter() -> RateLimiter:
+  return RateLimiter()
 
 
 @lru_cache
