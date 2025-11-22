@@ -224,3 +224,6 @@ __marimo__/
 !README.md
 !REQS.md
 *.pdf
+
+
+.vscode/

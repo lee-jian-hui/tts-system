@@ -34,7 +34,7 @@ async def test_transcode_rejects_unsupported_format() -> None:
             sample_rate_hz=16000,
         )
 
-    assert "Only 'pcm16' target_format is supported" in str(exc_info.value)
+    assert "Unsupported target_format" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

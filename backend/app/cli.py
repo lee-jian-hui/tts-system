@@ -4,6 +4,10 @@ import argparse
 from pathlib import Path
 
 from .settings import get_engine
+from .logging_utils import get_logger
+
+
+logger = get_logger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,10 +33,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     out_path = Path(args.out)
     out_path.write_bytes(audio_bytes)
-    print(f"Wrote {out_path} ({len(audio_bytes)} bytes, {mime})")
+    logger.info("Wrote %s (%d bytes, %s)", out_path, len(audio_bytes), mime)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
