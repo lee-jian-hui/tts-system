@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable
 
 from .base import BaseTTSProvider, ProviderVoice
 from .mock_tone import MockToneProvider
+from . import CoquiTTSProvider
 
 
 class ProviderRegistry:
     """Simple in-memory registry for TTS providers."""
 
     def __init__(self) -> None:
-        self._providers: Dict[str, BaseTTSProvider] = {
+        providers: Dict[str, BaseTTSProvider] = {
             MockToneProvider().id: MockToneProvider(),
+            CoquiTTSProvider().id: CoquiTTSProvider()
         }
+
+        self._providers = providers
 
     def get(self, provider_id: str) -> BaseTTSProvider:
         try:
@@ -28,4 +32,3 @@ class ProviderRegistry:
         for provider in self._providers.values():
             voices.extend(await provider.list_voices())
         return voices
-
