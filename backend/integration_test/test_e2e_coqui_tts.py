@@ -19,19 +19,23 @@ except Exception:  # pragma: no cover - environment dependent
 client = TestClient(app)
 
 
-
-# TODO: implement more tests for each output format
-# TODO: implement a DO-ALL test case that iterates across all possible provider and all possible voice and format
-def _run_single_flow(text: str) -> None:
-    # Use 22050Hz to match common Coqui output rate and avoid
-    # unnecessary transcoding work in this integration test.
+def _run_single_flow(
+    *,
+    text: str,
+    target_format: str,
+    sample_rate_hz: int,
+    voice: str,
+    language: str,
+) -> None:
+    # Use a sample rate close to the model's native rate (22050Hz) to
+    # keep transcoding overhead modest in integration tests.
     payload = {
         "provider": "coqui_tts",
-        "voice": "coqui-en-1",
+        "voice": voice,
         "text": text,
-        "target_format": "pcm16",
-        "sample_rate_hz": 22050,
-        "language": "en-US",
+        "target_format": target_format,
+        "sample_rate_hz": sample_rate_hz,
+        "language": language,
     }
 
     # 1) Create session
@@ -65,7 +69,25 @@ def _run_single_flow(text: str) -> None:
     not COQUI_AVAILABLE,
     reason="Coqui TTS library not available; install 'TTS' to run this test.",
 )
-def test_e2e_coqui_tts_multiple_utterances() -> None:
+@pytest.mark.parametrize(
+    "target_format,sample_rate_hz,voice,language",
+    [
+        ("pcm16", 22050, "coqui-en-1", "en-US"),
+        ("wav", 22050, "coqui-en-1", "en-US"),
+        ("mp3", 16000, "coqui-en-1", "en-US"),
+    ],
+)
+def test_e2e_coqui_tts_multiple_formats_and_utterances(
+    target_format: str,
+    sample_rate_hz: int,
+    voice: str,
+    language: str,
+) -> None:
     for utterance in ["hi 1", "hi 2", "Hello KeyReply"]:
-        _run_single_flow(utterance)
-
+        _run_single_flow(
+            text=utterance,
+            target_format=target_format,
+            sample_rate_hz=sample_rate_hz,
+            voice=voice,
+            language=language,
+        )

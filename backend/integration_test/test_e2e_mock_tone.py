@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -10,14 +11,21 @@ from app.main import app
 client = TestClient(app)
 
 
-def _run_single_flow(text: str) -> None:
+def _run_single_flow(
+    *,
+    text: str,
+    target_format: str,
+    sample_rate_hz: int,
+    voice: str,
+    language: str,
+) -> None:
     payload = {
         "provider": "mock_tone",
-        "voice": "en-US-mock-1",
+        "voice": voice,
         "text": text,
-        "target_format": "pcm16",
-        "sample_rate_hz": 16000,
-        "language": "en-US",
+        "target_format": target_format,
+        "sample_rate_hz": sample_rate_hz,
+        "language": language,
     }
 
     # 1) Create session
@@ -48,7 +56,25 @@ def _run_single_flow(text: str) -> None:
     assert total_bytes > 0, "Expected some audio payload bytes"
 
 
-def test_e2e_mock_tone_multiple_utterances() -> None:
+@pytest.mark.parametrize(
+    "target_format,sample_rate_hz,voice,language",
+    [
+        ("pcm16", 16000, "en-US-mock-1", "en-US"),
+        ("wav", 16000, "en-US-mock-1", "en-US"),
+        ("mp3", 16000, "en-US-mock-1", "en-US"),
+    ],
+)
+def test_e2e_mock_tone_multiple_formats_and_utterances(
+    target_format: str,
+    sample_rate_hz: int,
+    voice: str,
+    language: str,
+) -> None:
     for utterance in ["hi 1", "hi 2", "Hello KeyReply"]:
-        _run_single_flow(utterance)
-
+        _run_single_flow(
+            text=utterance,
+            target_format=target_format,
+            sample_rate_hz=sample_rate_hz,
+            voice=voice,
+            language=language,
+        )

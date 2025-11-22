@@ -1,22 +1,15 @@
-import { type FormEvent, useState, useEffect} from 'react'
+import { type FormEvent, useState, useEffect, useRef } from 'react'
 import './App.css'
+import { TtsForm } from './components/TtsForm'
+import { StatusPanel } from './components/StatusPanel'
+import { PlayerSection } from './components/PlayerSection'
+import type { TargetFormat, VoiceInfo } from './types'
 
 const BASE_URL = 'http://localhost:8080'
-
-type TargetFormat = 'pcm16' | 'wav' | 'mp3'
 
 interface SessionResponse {
   session_id: string
   ws_url: string
-}
-
-interface VoiceInfo {
-  id: string
-  name: string
-  language: string
-  provider: string
-  sample_rate_hz: number
-  supported_formats: string[]
 }
 
 interface AudioMessage {
@@ -46,6 +39,43 @@ function App() {
   const [voices, setVoices] = useState<VoiceInfo[]>([])
   const [voicesLoading, setVoicesLoading] = useState(false)
   const [voicesError, setVoicesError] = useState<string | null>(null)
+  const [isStreaming, setIsStreaming] = useState(false)
+
+  // Web Audio state for live PCM16 streaming
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const playheadRef = useRef<number>(0)
+  const audioStartedRef = useRef<boolean>(false)
+
+  const enqueuePcmChunk = (pcmBytes: Uint8Array, streamSampleRate: number) => {
+    const ctx = audioCtxRef.current
+    if (!ctx) return
+
+    const frameCount = Math.floor(pcmBytes.byteLength / 2)
+    if (frameCount <= 0) return
+
+    const audioBuffer = ctx.createBuffer(1, frameCount, streamSampleRate)
+    const channelData = audioBuffer.getChannelData(0)
+    const view = new DataView(
+      pcmBytes.buffer,
+      pcmBytes.byteOffset,
+      pcmBytes.byteLength,
+    )
+
+    for (let i = 0; i < frameCount; i += 1) {
+      const sample = view.getInt16(i * 2, true) / 32768
+      channelData[i] = sample
+    }
+
+    const source = ctx.createBufferSource()
+    source.buffer = audioBuffer
+    source.connect(ctx.destination)
+
+    // Schedule sequentially to keep continuity.
+    const now = ctx.currentTime
+    const startTime = playheadRef.current > now ? playheadRef.current : now
+    source.start(startTime)
+    playheadRef.current = startTime + audioBuffer.duration
+  }
 
   // Load available voices from backend on mount
   useEffect(() => {
@@ -121,6 +151,20 @@ function App() {
       language: 'en-US',
     }
 
+    // Ensure AudioContext is ready for live PCM16 streaming.
+    if (targetFormat === 'pcm16') {
+      if (!audioCtxRef.current) {
+        const AC =
+          window.AudioContext ||
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).webkitAudioContext
+        audioCtxRef.current = new AC()
+      }
+      await audioCtxRef.current!.resume()
+      playheadRef.current = audioCtxRef.current!.currentTime
+      audioStartedRef.current = false
+    }
+
     try {
       const resp = await fetch(`${BASE_URL}/v1/tts/sessions`, {
         method: 'POST',
@@ -133,7 +177,7 @@ function App() {
       }
       const { session_id, ws_url } = (await resp.json()) as SessionResponse
       setStatus(`Session ${session_id} created. Connecting WebSocket...`)
-      await streamAudio(ws_url, payload.target_format)
+      await streamAudio(ws_url, payload.target_format, payload.sample_rate_hz)
     } catch (err) {
       console.error('Error creating session or streaming:', err)
       const message =
@@ -143,7 +187,11 @@ function App() {
     }
   }
 
-  const streamAudio = async (wsUrl: string, format: TargetFormat) => {
+  const streamAudio = async (
+    wsUrl: string,
+    format: TargetFormat,
+    streamSampleRate: number,
+  ) => {
     let ws: WebSocket
     try {
       ws = new WebSocket(wsUrl)
@@ -159,6 +207,7 @@ function App() {
     let totalBytes = 0
 
     setStatus('Streaming audio...')
+    setIsStreaming(true)
 
     ws.onopen = () => {
       console.debug('WebSocket opened:', wsUrl)
@@ -175,33 +224,61 @@ function App() {
       }
       if (msg.type === 'audio') {
         const chunkBytes = base64ToBytes(msg.data)
-        chunksArr.push(chunkBytes)
+        // Live streaming path for PCM16 via Web Audio.
+        if (format === 'pcm16') {
+          try {
+            enqueuePcmChunk(chunkBytes, streamSampleRate)
+              if (!audioStartedRef.current) {
+                setStatus('Playing (live)...')
+                audioStartedRef.current = true
+              }
+          } catch (err) {
+            console.error('Failed to enqueue PCM chunk:', err)
+            setLastError(
+              'Failed to enqueue PCM chunk for playback. See console for details.',
+            )
+          }
+        } else {
+          // File-oriented path for container formats (wav/mp3).
+          chunksArr.push(chunkBytes)
+        }
         totalBytes += chunkBytes.length
         setBytes(totalBytes)
         setChunks((c) => c + 1)
       } else if (msg.type === 'eos') {
-        setStatus('Stream complete. Building audio blob...')
-        ws.close()
-        const mime =
-          format === 'mp3'
-            ? 'audio/mpeg'
-            : format === 'wav'
-            ? 'audio/wav'
-            : 'audio/raw'
-        const blob = new Blob(chunksArr, { type: mime })
-        const url = URL.createObjectURL(blob)
-        setAudioUrl(url)
-
-        const audioEl = document.getElementById('audio-player') as
-          | HTMLAudioElement
-          | null
-        if (audioEl) {
-          audioEl
-            .play()
-            .then(() => setStatus('Playing.'))
-            .catch(() => setStatus('Ready (click play).'))
+        if (format === 'pcm16') {
+          setStatus(
+            audioStartedRef.current
+              ? 'Stream complete (live playback).'
+              : 'Stream complete (no audio played).',
+          )
         } else {
-          setStatus('Ready (audio element not found).')
+          setStatus('Stream complete. Building audio blob...')
+        }
+        ws.close()
+        setIsStreaming(false)
+        if (format !== 'pcm16') {
+          const mime =
+            format === 'mp3'
+              ? 'audio/mpeg'
+              : format === 'wav'
+              ? 'audio/wav'
+              : 'audio/raw'
+          const blob = new Blob(chunksArr, { type: mime })
+          const url = URL.createObjectURL(blob)
+          setAudioUrl(url)
+
+          const audioEl = document.getElementById('audio-player') as
+            | HTMLAudioElement
+            | null
+          if (audioEl) {
+            audioEl
+              .play()
+              .then(() => setStatus('Playing.'))
+              .catch(() => setStatus('Ready (click play).'))
+          } else {
+            setStatus('Ready (audio element not found).')
+          }
         }
       } else {
         console.warn('Received unknown WebSocket message type:', msg)
@@ -227,6 +304,7 @@ function App() {
           `WebSocket closed uncleanly (code=${event.code}, reason="${event.reason || 'none'}").`,
         )
       }
+      setIsStreaming(false)
     }
   }
 
@@ -234,113 +312,32 @@ function App() {
     <div className="app">
       <h1>TTS Gateway Demo</h1>
 
-      <form onSubmit={handleSubmit} className="tts-form">
-        <div className="form-field">
-          <label htmlFor="text">Text</label>
-          <textarea
-            id="text"
-            rows={3}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-        </div>
+      <TtsForm
+        text={text}
+        provider={provider}
+        voice={voice}
+        targetFormat={targetFormat}
+        sampleRate={sampleRate}
+        voices={voices}
+        onTextChange={setText}
+        onProviderChange={setProvider}
+        onVoiceChange={setVoice}
+        onTargetFormatChange={setTargetFormat}
+        onSampleRateChange={setSampleRate}
+        onSubmit={handleSubmit}
+      />
 
-        <div className="form-field">
-          <label htmlFor="provider">Provider</label>
-          <select
-            id="provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-          >
-            {Array.from(new Set(voices.map((v) => v.provider))).map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-            {voices.length === 0 && (
-              <>
-                <option value="mock_tone">mock_tone</option>
-                <option value="coqui_tts">coqui_tts</option>
-              </>
-            )}
-          </select>
-        </div>
+      <StatusPanel
+        status={status}
+        bytes={bytes}
+        chunks={chunks}
+        voicesLoading={voicesLoading}
+        voicesError={voicesError}
+        lastError={lastError}
+        isStreaming={isStreaming}
+      />
 
-        <div className="form-field">
-          <label htmlFor="voice">Voice</label>
-          <input
-            id="voice"
-            list="voice-options"
-            value={voice}
-            onChange={(e) => setVoice(e.target.value)}
-          />
-          <datalist id="voice-options">
-            {voices
-              .filter((v) => v.provider === provider)
-              .map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name} ({v.language})
-                </option>
-              ))}
-          </datalist>
-        </div>
-
-        <div className="form-field">
-          <label htmlFor="target-format">Target format</label>
-          <select
-            id="target-format"
-            value={targetFormat}
-            onChange={(e) => setTargetFormat(e.target.value as TargetFormat)}
-          >
-            <option value="pcm16">pcm16 (raw)</option>
-            <option value="wav">wav</option>
-            <option value="mp3">mp3</option>
-          </select>
-        </div>
-
-        <div className="form-field">
-          <label htmlFor="sample-rate">Sample rate (Hz)</label>
-          <input
-            id="sample-rate"
-            type="number"
-            value={sampleRate}
-            onChange={(e) => setSampleRate(Number(e.target.value) || 0)}
-          />
-        </div>
-
-        <button type="submit">Start Session</button>
-      </form>
-
-      <section className="status-panel">
-        <p>
-          <strong>Status:</strong> {status}
-        </p>
-        <p>
-          Bytes received: <span>{bytes}</span>
-        </p>
-        <p>
-          Chunks: <span>{chunks}</span>
-        </p>
-        {voicesLoading && <p>Loading voices...</p>}
-        {voicesError && (
-          <p>
-            <strong>Voice load error:</strong> {voicesError}
-          </p>
-        )}
-        {lastError && (
-          <p>
-            <strong>Last error:</strong> {lastError}
-          </p>
-        )}
-      </section>
-
-      <section className="player-section">
-        <audio
-          id="audio-player"
-          controls
-          src={audioUrl ?? undefined}
-        />
-      </section>
+      <PlayerSection targetFormat={targetFormat} audioUrl={audioUrl} />
     </div>
   )
 }
