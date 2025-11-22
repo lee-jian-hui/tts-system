@@ -12,8 +12,8 @@ import websockets
 
 BASE_URL = "http://localhost:8080"
 TEXT = "Hello KeyReply – streaming test!"
-PROVIDER_ID = "mock_tone"
-VOICE_ID = "en-US-mock-1"
+PROVIDER_ID = "coqui_tts"
+VOICE_ID = "coqui-en-1"
 TARGET_FORMAT = "pcm16"
 SAMPLE_RATE_HZ = 16000
 
@@ -65,11 +65,10 @@ def main() -> int:
     ws_url = session["ws_url"]
     print(f"Session created: {session_id}")
 
-    out_path = Path("stream_output.pcm")
+    out_path = Path("stream_output_coqui.pcm")
     asyncio.run(stream_audio(ws_url, out_path))
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
