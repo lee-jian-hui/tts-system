@@ -11,6 +11,7 @@ from app.models import (
 )
 from app.providers import ProviderRegistry
 from app.repositories import TTSSessionRepository
+from app import metrics as app_metrics
 from .transcode_service import AudioTranscodeService
 from .circuit_breaker import CircuitBreakerRegistry
 
@@ -44,6 +45,7 @@ class TTSService:
             sample_rate_hz=req.sample_rate_hz,
         )
         self._sessions.save(session)
+        app_metrics.record_session_created(req.provider)
         return session
 
     async def stream_session_audio(
@@ -65,6 +67,7 @@ class TTSService:
 
         provider = self._providers.get(provider_id)
         self._sessions.update_status(session.id, SessionStatus.STREAMING)
+        app_metrics.increment_active_streams(provider_id)
 
         try:
             async for chunk in provider.stream_synthesize(
@@ -77,13 +80,21 @@ class TTSService:
                     target_format=session.target_format,
                     sample_rate_hz=session.sample_rate_hz,
                 )
+                app_metrics.record_stream_chunk(
+                    provider_id, session.target_format, len(encoded)
+                )
                 yield encoded
         except Exception:
             self._sessions.update_status(session.id, SessionStatus.FAILED)
             # Treat any failure during streaming as a provider failure event.
             self._circuit_breakers.record_failure(provider_id)
+            app_metrics.record_session_failed(provider_id)
+            app_metrics.record_provider_failure(provider_id)
+            app_metrics.decrement_active_streams(provider_id)
             raise
         else:
             # Successful completion resets breaker state.
             self._circuit_breakers.record_success(provider_id)
             self._sessions.update_status(session.id, SessionStatus.COMPLETED)
+            app_metrics.record_session_completed(provider_id)
+            app_metrics.decrement_active_streams(provider_id)

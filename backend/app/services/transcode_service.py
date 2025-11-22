@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from enum import Enum
 
 import subprocess
 
@@ -10,6 +10,14 @@ from app.logging_utils import get_logger
 
 
 logger = get_logger(__name__)
+
+
+class SupportedAudioFormat(str, Enum):
+    PCM16 = "pcm16"
+    MULAW = "mulaw"
+    OPUS = "opus"
+    MP3 = "mp3"
+    WAV = "wav"
 
 
 class AudioTranscodeService:
@@ -65,24 +73,34 @@ class AudioTranscodeService:
         """Invoke ffmpeg CLI to convert between formats and sample rates."""
 
         def input_args(fmt: AudioFormat) -> list[str]:
-            if fmt == "pcm16":
+            try:
+                fmt_enum = SupportedAudioFormat(fmt)
+            except ValueError as exc:  # invalid value for enum
+                raise ValueError(f"Unsupported input format '{fmt}'") from exc
+
+            if fmt_enum is SupportedAudioFormat.PCM16:
                 return ["-f", "s16le", "-ar", str(in_rate), "-ac", str(in_channels)]
-            if fmt == "wav":
+            if fmt_enum is SupportedAudioFormat.WAV:
                 return ["-f", "wav", "-ar", str(in_rate), "-ac", str(in_channels)]
-            if fmt == "mp3":
+            if fmt_enum is SupportedAudioFormat.MP3:
                 return ["-f", "mp3", "-ar", str(in_rate), "-ac", str(in_channels)]
-            if fmt == "mulaw":
+            if fmt_enum is SupportedAudioFormat.MULAW:
                 return ["-f", "mulaw", "-ar", str(in_rate), "-ac", str(in_channels)]
-            if fmt == "opus":
+            if fmt_enum is SupportedAudioFormat.OPUS:
                 return ["-f", "opus", "-ar", str(in_rate), "-ac", str(in_channels)]
             raise ValueError(f"Unsupported input format '{fmt}'")
 
         def output_args(fmt: AudioFormat) -> list[str]:
-            if fmt == "pcm16":
+            try:
+                fmt_enum = SupportedAudioFormat(fmt)
+            except ValueError as exc:
+                raise ValueError(f"Unsupported output format '{fmt}'") from exc
+
+            if fmt_enum is SupportedAudioFormat.PCM16:
                 return ["-f", "s16le", "-ar", str(out_rate), "-ac", str(in_channels)]
-            if fmt == "wav":
+            if fmt_enum is SupportedAudioFormat.WAV:
                 return ["-f", "wav", "-ar", str(out_rate), "-ac", str(in_channels)]
-            if fmt == "mp3":
+            if fmt_enum is SupportedAudioFormat.MP3:
                 return [
                     "-f",
                     "mp3",
@@ -93,7 +111,7 @@ class AudioTranscodeService:
                     "-b:a",
                     "128k",
                 ]
-            if fmt == "opus":
+            if fmt_enum is SupportedAudioFormat.OPUS:
                 return [
                     "-f",
                     "opus",
@@ -104,7 +122,7 @@ class AudioTranscodeService:
                     "-b:a",
                     "64k",
                 ]
-            if fmt == "mulaw":
+            if fmt_enum is SupportedAudioFormat.MULAW:
                 return ["-f", "mulaw", "-ar", str(out_rate), "-ac", str(in_channels)]
             raise ValueError(f"Unsupported output format '{fmt}'")
 

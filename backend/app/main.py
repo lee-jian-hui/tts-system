@@ -7,6 +7,8 @@ from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
 from app.models import (
     CreateTTSSessionRequest,
     CreateTTSSessionResponse,
@@ -110,8 +112,8 @@ async def create_session(
 
 @app.get("/metrics")
 async def metrics() -> PlainTextResponse:
-    # Minimal stub; can be replaced with real Prometheus metrics.
-    return PlainTextResponse("# metrics not implemented yet\n", media_type="text/plain")
+    payload = generate_latest()
+    return PlainTextResponse(payload, media_type=CONTENT_TYPE_LATEST)
 
 
 @app.websocket("/v1/tts/stream/{session_id}")
