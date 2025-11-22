@@ -5,11 +5,12 @@ from functools import lru_cache
 from app.providers import ProviderRegistry
 from app.repositories import InMemoryTTSSessionRepository
 from app.services import TTSService, AudioTranscodeService
+from app.services.circuit_breaker import CircuitBreakerRegistry
 
 
 @lru_cache
 def get_provider_registry() -> ProviderRegistry:
-    return ProviderRegistry()
+  return ProviderRegistry()
 
 
 @lru_cache
@@ -19,13 +20,19 @@ def get_session_repo() -> InMemoryTTSSessionRepository:
 
 @lru_cache
 def get_transcode_service() -> AudioTranscodeService:
-    return AudioTranscodeService()
+  return AudioTranscodeService()
+
+
+@lru_cache
+def get_circuit_breaker_registry() -> CircuitBreakerRegistry:
+  return CircuitBreakerRegistry()
 
 
 @lru_cache
 def get_tts_service() -> TTSService:
-    return TTSService(
-        provider_registry=get_provider_registry(),
-        session_repo=get_session_repo(),
-        transcode_service=get_transcode_service(),
-    )
+  return TTSService(
+    provider_registry=get_provider_registry(),
+    session_repo=get_session_repo(),
+    transcode_service=get_transcode_service(),
+    circuit_breakers=get_circuit_breaker_registry(),
+  )

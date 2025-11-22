@@ -12,6 +12,7 @@ from app.models import (
 from app.providers import ProviderRegistry
 from app.repositories import TTSSessionRepository
 from .transcode_service import AudioTranscodeService
+from .circuit_breaker import CircuitBreakerRegistry
 
 
 class TTSService:
@@ -23,10 +24,12 @@ class TTSService:
         provider_registry: ProviderRegistry,
         session_repo: TTSSessionRepository,
         transcode_service: AudioTranscodeService,
+        circuit_breakers: CircuitBreakerRegistry,
     ) -> None:
         self._providers = provider_registry
         self._sessions = session_repo
         self._transcode = transcode_service
+        self._circuit_breakers = circuit_breakers
 
     def create_session(self, req: CreateTTSSessionRequest) -> TTSSession:
         """Create and persist a new TTS session."""
@@ -52,7 +55,15 @@ class TTSService:
         if not session:
             raise ValueError(f"Unknown session '{session_id}'")
 
-        provider = self._providers.get(session.provider)
+        provider_id = session.provider
+
+        # Check circuit breaker before calling provider.
+        if not self._circuit_breakers.allow_request(provider_id):
+            raise ValueError(
+                f"Provider '{provider_id}' temporarily unavailable (circuit open)"
+            )
+
+        provider = self._providers.get(provider_id)
         self._sessions.update_status(session.id, SessionStatus.STREAMING)
 
         try:
@@ -69,6 +80,10 @@ class TTSService:
                 yield encoded
         except Exception:
             self._sessions.update_status(session.id, SessionStatus.FAILED)
+            # Treat any failure during streaming as a provider failure event.
+            self._circuit_breakers.record_failure(provider_id)
             raise
         else:
+            # Successful completion resets breaker state.
+            self._circuit_breakers.record_success(provider_id)
             self._sessions.update_status(session.id, SessionStatus.COMPLETED)
