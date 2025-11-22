@@ -42,6 +42,7 @@ function App() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [droppedFrames, setDroppedFrames] = useState(0)
+  const [limitLiveBuffer, setLimitLiveBuffer] = useState(false)
 
   // Web Audio state for live PCM16 streaming
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -247,6 +248,16 @@ function App() {
         // Live streaming path for PCM16 via Web Audio.
         if (format === 'pcm16') {
           try {
+            const ctx = audioCtxRef.current
+            if (ctx && limitLiveBuffer) {
+              const leadSeconds = playheadRef.current - ctx.currentTime
+              // If we are already buffering more than ~2 seconds ahead,
+              // drop this chunk instead of increasing latency further.
+              if (leadSeconds > 2.0) {
+                setDroppedFrames((d) => d + 1)
+                return
+              }
+            }
             enqueuePcmChunk(chunkBytes, streamSampleRate)
             if (!audioStartedRef.current) {
               setStatus('Playing (live)...')
@@ -359,6 +370,10 @@ function App() {
         chunks={chunks}
         latencyMs={latencyMs}
         droppedFrames={droppedFrames}
+        targetFormat={targetFormat}
+        sampleRate={sampleRate}
+        limitLiveBuffer={limitLiveBuffer}
+        onLimitLiveBufferChange={setLimitLiveBuffer}
         voicesLoading={voicesLoading}
         voicesError={voicesError}
         lastError={lastError}

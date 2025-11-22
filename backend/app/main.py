@@ -45,6 +45,30 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def log_http_requests(request: Request, call_next):
+    """Centralized logging for all HTTP requests."""
+    import time
+
+    start = time.monotonic()
+    response = None
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration = time.monotonic() - start
+        client_host = request.client.host if request.client else "unknown"
+        status_code = response.status_code if response is not None else 500
+        logger.info(
+            "HTTP %s %s from %s -> %d in %.3fs",
+            request.method,
+            request.url.path,
+            client_host,
+            status_code,
+            duration,
+        )
+
+
 @app.get("/healthz", response_model=HealthResponse)
 async def healthz() -> HealthResponse:
     return HealthResponse(status="ok")

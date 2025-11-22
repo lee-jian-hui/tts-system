@@ -1,9 +1,15 @@
+import type { TargetFormat } from '../types'
+
 interface Props {
   status: string
   bytes: number
   chunks: number
   latencyMs: number | null
   droppedFrames: number
+  targetFormat: TargetFormat
+  sampleRate: number
+  limitLiveBuffer: boolean
+  onLimitLiveBufferChange: (value: boolean) => void
   voicesLoading: boolean
   voicesError: string | null
   lastError: string | null
@@ -16,6 +22,10 @@ export function StatusPanel({
   chunks,
   latencyMs,
   droppedFrames,
+  targetFormat,
+  sampleRate,
+  limitLiveBuffer,
+  onLimitLiveBufferChange,
   voicesLoading,
   voicesError,
   lastError,
@@ -32,6 +42,12 @@ export function StatusPanel({
       <p>
         Chunks: <span>{chunks}</span>
       </p>
+      <p>
+        Format:{' '}
+        <span>
+          {targetFormat} @ {sampleRate} Hz
+        </span>
+      </p>
       {latencyMs != null && (
         <p>
           First chunk latency:{' '}
@@ -41,6 +57,18 @@ export function StatusPanel({
       <p>
         Dropped frames: <span>{droppedFrames}</span>
       </p>
+      {targetFormat === 'pcm16' && (
+        <p>
+          <label>
+            <input
+              type="checkbox"
+              checked={limitLiveBuffer}
+              onChange={(e) => onLimitLiveBufferChange(e.target.checked)}
+            />{' '}
+            Limit live buffer to ~2s (drop extra chunks)
+          </label>
+        </p>
+      )}
       {isStreaming && (
         <div className="streaming-indicator">
           <span className="dot" />
