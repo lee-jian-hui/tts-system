@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from app.providers import ProviderRegistry
-from app.repositories import InMemoryTTSSessionRepository, VoiceRepository
+from app.repositories import InMemoryTTSSessionRepository
 from app.services import TTSService, AudioTranscodeService
 
 
@@ -29,9 +29,3 @@ def get_tts_service() -> TTSService:
         session_repo=get_session_repo(),
         transcode_service=get_transcode_service(),
     )
-
-
-@lru_cache
-def get_voice_repo() -> VoiceRepository:
-    return VoiceRepository(get_provider_registry())
-

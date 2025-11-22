@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { type FormEvent, useState, useEffect} from 'react'
 import './App.css'
 
 const BASE_URL = 'http://localhost:8080'
@@ -8,6 +8,15 @@ type TargetFormat = 'pcm16' | 'wav' | 'mp3'
 interface SessionResponse {
   session_id: string
   ws_url: string
+}
+
+interface VoiceInfo {
+  id: string
+  name: string
+  language: string
+  provider: string
+  sample_rate_hz: number
+  supported_formats: string[]
 }
 
 interface AudioMessage {
@@ -33,7 +42,63 @@ function App() {
   const [bytes, setBytes] = useState(0)
   const [chunks, setChunks] = useState(0)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-   const [lastError, setLastError] = useState<string | null>(null)
+  const [lastError, setLastError] = useState<string | null>(null)
+  const [voices, setVoices] = useState<VoiceInfo[]>([])
+  const [voicesLoading, setVoicesLoading] = useState(false)
+  const [voicesError, setVoicesError] = useState<string | null>(null)
+
+  // Load available voices from backend on mount
+  useEffect(() => {
+    const loadVoices = async () => {
+      setVoicesLoading(true)
+      setVoicesError(null)
+      try {
+        const resp = await fetch(`${BASE_URL}/v1/voices`)
+        if (!resp.ok) {
+          const body = await resp.text()
+          throw new Error(`HTTP ${resp.status}: ${body}`)
+        }
+        const data = (await resp.json()) as { voices: VoiceInfo[] }
+        setVoices(data.voices)
+
+        // Initialize provider/voice if not already valid
+        if (data.voices.length > 0) {
+          const first = data.voices[0]
+          if (!data.voices.some((v) => v.provider === provider)) {
+            setProvider(first.provider)
+          }
+          if (!data.voices.some((v) => v.id === voice)) {
+            setVoice(first.id)
+            setSampleRate(first.sample_rate_hz)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load voices:', err)
+        const msg =
+          err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+        setVoicesError(msg)
+      } finally {
+        setVoicesLoading(false)
+      }
+    }
+
+    loadVoices().catch((err) => {
+      console.error('Unexpected error loading voices:', err)
+    })
+  }, [])
+
+  // When provider changes, ensure selected voice belongs to that provider
+  useEffect(() => {
+    const providerVoices = voices.filter((v) => v.provider === provider)
+    if (providerVoices.length === 0) {
+      return
+    }
+    if (!providerVoices.some((v) => v.id === voice)) {
+      const first = providerVoices[0]
+      setVoice(first.id)
+      setSampleRate(first.sample_rate_hz)
+    }
+  }, [provider, voices, voice])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -187,8 +252,17 @@ function App() {
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
           >
-            <option value="mock_tone">Mock Tone</option>
-            <option value="coqui_tts">Coqui TTS</option>
+            {Array.from(new Set(voices.map((v) => v.provider))).map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+            {voices.length === 0 && (
+              <>
+                <option value="mock_tone">mock_tone</option>
+                <option value="coqui_tts">coqui_tts</option>
+              </>
+            )}
           </select>
         </div>
 
@@ -196,9 +270,19 @@ function App() {
           <label htmlFor="voice">Voice</label>
           <input
             id="voice"
+            list="voice-options"
             value={voice}
             onChange={(e) => setVoice(e.target.value)}
           />
+          <datalist id="voice-options">
+            {voices
+              .filter((v) => v.provider === provider)
+              .map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name} ({v.language})
+                </option>
+              ))}
+          </datalist>
         </div>
 
         <div className="form-field">
@@ -237,6 +321,12 @@ function App() {
         <p>
           Chunks: <span>{chunks}</span>
         </p>
+        {voicesLoading && <p>Loading voices...</p>}
+        {voicesError && (
+          <p>
+            <strong>Voice load error:</strong> {voicesError}
+          </p>
+        )}
         {lastError && (
           <p>
             <strong>Last error:</strong> {lastError}

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import AsyncIterator
 
 from .base import AudioChunk, BaseTTSProvider, ProviderVoice
+from app.config import settings
 from TTS.api import TTS as CoquiTTS  # type: ignore[import]
 
 class CoquiTTSProvider(BaseTTSProvider):
@@ -18,12 +19,12 @@ class CoquiTTSProvider(BaseTTSProvider):
     def __init__(
         self,
         model_name: str | None = None,
-        language: str = "en-US",
+        language: str | None = None,
         chunk_size_frames: int = 1600,
     ) -> None:
         # A commonly used English Coqui model; users can override this.
-        self._model_name = model_name or "tts_models/en/ljspeech/tacotron2-DDC"
-        self._language = language
+        self._model_name = model_name or settings.coqui_model_name
+        self._language = language or settings.coqui_language
         self._tts = CoquiTTS(model_name=self._model_name, progress_bar=False, gpu=False)
 
         # Coqui exposes the output sample rate via synthesizer.

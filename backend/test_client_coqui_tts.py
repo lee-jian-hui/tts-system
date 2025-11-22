@@ -14,7 +14,7 @@ BASE_URL = "http://localhost:8080"
 TEXT = "Hello JOCELYN Koay Chia wen – streaming test!"
 PROVIDER_ID = "coqui_tts"
 VOICE_ID = "coqui-en-1"
-TARGET_FORMAT = "pcm16"
+TARGET_FORMAT = "wav"
 # Must match the Coqui model output sample rate (22050 Hz for
 # tts_models/en/ljspeech/tacotron2-DDC) so the PCM16 transcoder
 # accepts the chunks without resampling.

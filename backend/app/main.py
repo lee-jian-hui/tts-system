@@ -14,14 +14,18 @@ from app.models import (
     HealthResponse,
     AudioChunkMessage,
     EndOfStreamMessage,
+    Voice,
 )
+from app.logging_utils import get_logger
 from app.container import (
     get_provider_registry,
     get_session_repo,
     get_transcode_service,
     get_tts_service,
-    get_voice_repo,
 )
+
+
+logger = get_logger(__name__)
 
 
 app = FastAPI(title="tts-gateway", version="0.1.0")
@@ -48,8 +52,26 @@ async def list_voices(
     provider: Optional[str] = Query(None),
     language: Optional[str] = Query(None),
 ) -> VoicesResponse:
-    voices = await get_voice_repo().list_voices(provider=provider, language=language)
-    return VoicesResponse(voices=voices)
+    registry = get_provider_registry()
+    items: list[Voice] = []
+    for p in registry.list_providers():
+        if provider and p.id != provider:
+            continue
+        p_voices = await p.list_voices()
+        for v in p_voices:
+            if language and v.language != language:
+                continue
+            items.append(
+                Voice(
+                    id=v.id,
+                    name=v.name,
+                    language=v.language,
+                    provider=p.id,
+                    sample_rate_hz=v.sample_rate_hz,
+                    supported_formats=["pcm16", "wav", "mp3"],
+                )
+            )
+    return VoicesResponse(voices=items)
 
 
 @app.post(
@@ -99,8 +121,19 @@ async def stream_tts(websocket: WebSocket, session_id: str) -> None:
         # Client disconnected; nothing special to do.
         return
     except ValueError as exc:
-        # Unknown session or validation error.
-        await websocket.close(code=1008, reason=str(exc))
-    except Exception:
+        # Unknown session or validation/transcoding error.
+        logger.error(
+            "WebSocket stream error for session %s: %s",
+            session_id,
+            exc,
+            exc_info=True,
+        )
+        await websocket.close(code=1011, reason=str(exc))
+    except Exception as exc:  # pragma: no cover - defensive
         # Internal error; close with generic server error code.
-        await websocket.close(code=1011)
+        logger.error(
+            "WebSocket internal error for session %s",
+            session_id,
+            exc_info=True,
+        )
+        await websocket.close(code=1011, reason="internal error")

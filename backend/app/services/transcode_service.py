@@ -1,116 +1,24 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Literal
+
+import subprocess
 
 from app.models import AudioFormat
 from app.providers import AudioChunk
+from app.logging_utils import get_logger
 
 
-class AudioTranscoder(ABC):
-    """Abstract base class for audio transcoders.
-
-    Implementations convert provider-produced audio chunks into a
-    desired format and sample rate.
-    """
-
-    @abstractmethod
-    async def transcode(
-        self,
-        chunk: AudioChunk,
-        *,
-        target_format: AudioFormat,
-        sample_rate_hz: int,
-    ) -> bytes:
-        """Convert an AudioChunk to the requested format/sample rate."""
-
-
-class Pcm16Transcoder(AudioTranscoder):
-    """PCM16 pass-through transcoder (MVP).
-
-    Assumes input is PCM16 mono and returns the bytes unchanged when
-    the requested target format is also PCM16 and the sample rate
-    matches.
-    """
-
-    async def transcode(
-        self,
-        chunk: AudioChunk,
-        *,
-        target_format: AudioFormat,
-        sample_rate_hz: int,
-    ) -> bytes:
-        if target_format != "pcm16":
-            raise ValueError("Pcm16Transcoder only supports 'pcm16' as target_format")
-        if chunk.format != "pcm16":
-            raise ValueError("Pcm16Transcoder expects input chunks in 'pcm16' format")
-        if chunk.sample_rate_hz != sample_rate_hz:
-            # Future work: resample when rates differ.
-            raise ValueError("Sample rate mismatch in PCM16 transcoder")
-        return chunk.data
-
-
-class WavFromPcmTranscoder(AudioTranscoder):
-    """Skeleton transcoder to wrap PCM16 data in a WAV container.
-
-    This is intentionally left for future implementation. The typical
-    steps will be:
-
-    - Validate/convert input to PCM16.
-    - Optionally resample to `sample_rate_hz`.
-    - Use helpers from `app.audio` to construct a WAV header and
-      prepend it to the PCM bytes.
-    """
-
-    async def transcode(
-        self,
-        chunk: AudioChunk,
-        *,
-        target_format: AudioFormat,
-        sample_rate_hz: int,
-    ) -> bytes:
-        # TODO: implement WAV wrapping logic based on app.audio helpers.
-        raise NotImplementedError("WavFromPcmTranscoder not implemented yet")
-
-
-class FfmpegTranscoder(AudioTranscoder):
-    """Skeleton transcoder using ffmpeg for compressed formats.
-
-    This is a placeholder for future work. A typical implementation
-    would:
-
-    - Accept PCM16 input.
-    - Spawn an ffmpeg subprocess to convert PCM -> target_format.
-    - Stream bytes in/out or buffer the full result.
-    - Handle errors, timeouts, and non-zero exit codes.
-    """
-
-    async def transcode(
-        self,
-        chunk: AudioChunk,
-        *,
-        target_format: AudioFormat,
-        sample_rate_hz: int,
-    ) -> bytes:
-        # TODO: integrate ffmpeg or a Python audio library here.
-        raise NotImplementedError("FfmpegTranscoder not implemented yet")
+logger = get_logger(__name__)
 
 
 class AudioTranscodeService:
-    """Route audio chunks through the appropriate transcoder.
+    """General-purpose audio transcoder using ffmpeg CLI.
 
-    For MVP this only wires up a PCM16 pass-through transcoder. New
-    formats (e.g., WAV, MP3, Opus) can be added by registering
-    additional AudioTranscoder implementations.
+    This service accepts AudioChunk objects in any supported input
+    format and transcodes them on the fly into the requested output
+    format and sample rate.
     """
-
-    def __init__(self) -> None:
-        self._transcoders: Dict[AudioFormat, AudioTranscoder] = {
-            "pcm16": Pcm16Transcoder(),
-            # "wav": WavFromPcmTranscoder(),
-            # "mp3": FfmpegTranscoder(),
-            # "opus": FfmpegTranscoder(),
-        }
 
     async def transcode_chunk(
         self,
@@ -119,11 +27,146 @@ class AudioTranscodeService:
         target_format: AudioFormat,
         sample_rate_hz: int,
     ) -> bytes:
-        transcoder = self._transcoders.get(target_format)
-        if transcoder is None:
-            raise ValueError(f"Unsupported target_format '{target_format}'")
-        return await transcoder.transcode(
-            chunk,
-            target_format=target_format,
-            sample_rate_hz=sample_rate_hz,
+        logger.info(
+            "[START] transcode_chunk in=%s@%dHz ch=%d -> out=%s@%dHz (len=%d)",
+            chunk.format,
+            chunk.sample_rate_hz,
+            chunk.num_channels,
+            target_format,
+            sample_rate_hz,
+            len(chunk.data),
         )
+
+        # Fast path: already in the requested format and sample rate.
+        if chunk.format == target_format and chunk.sample_rate_hz == sample_rate_hz:
+            logger.info("[SKIP] transcoding not required (format/rate match)")
+            return chunk.data
+
+        # Route all other cases through ffmpeg CLI.
+        return self._ffmpeg_transcode(
+            data=chunk.data,
+            in_format=chunk.format,
+            in_rate=chunk.sample_rate_hz,
+            in_channels=chunk.num_channels,
+            out_format=target_format,
+            out_rate=sample_rate_hz,
+        )
+
+    def _ffmpeg_transcode(
+        self,
+        *,
+        data: bytes,
+        in_format: AudioFormat,
+        in_rate: int,
+        in_channels: int,
+        out_format: AudioFormat,
+        out_rate: int,
+    ) -> bytes:
+        """Invoke ffmpeg CLI to convert between formats and sample rates."""
+
+        def input_args(fmt: AudioFormat) -> list[str]:
+            if fmt == "pcm16":
+                return ["-f", "s16le", "-ar", str(in_rate), "-ac", str(in_channels)]
+            if fmt == "wav":
+                return ["-f", "wav", "-ar", str(in_rate), "-ac", str(in_channels)]
+            if fmt == "mp3":
+                return ["-f", "mp3", "-ar", str(in_rate), "-ac", str(in_channels)]
+            if fmt == "mulaw":
+                return ["-f", "mulaw", "-ar", str(in_rate), "-ac", str(in_channels)]
+            if fmt == "opus":
+                return ["-f", "opus", "-ar", str(in_rate), "-ac", str(in_channels)]
+            raise ValueError(f"Unsupported input format '{fmt}'")
+
+        def output_args(fmt: AudioFormat) -> list[str]:
+            if fmt == "pcm16":
+                return ["-f", "s16le", "-ar", str(out_rate), "-ac", str(in_channels)]
+            if fmt == "wav":
+                return ["-f", "wav", "-ar", str(out_rate), "-ac", str(in_channels)]
+            if fmt == "mp3":
+                return [
+                    "-f",
+                    "mp3",
+                    "-ar",
+                    str(out_rate),
+                    "-ac",
+                    str(in_channels),
+                    "-b:a",
+                    "128k",
+                ]
+            if fmt == "opus":
+                return [
+                    "-f",
+                    "opus",
+                    "-ar",
+                    str(out_rate),
+                    "-ac",
+                    str(in_channels),
+                    "-b:a",
+                    "64k",
+                ]
+            if fmt == "mulaw":
+                return ["-f", "mulaw", "-ar", str(out_rate), "-ac", str(in_channels)]
+            raise ValueError(f"Unsupported output format '{fmt}'")
+
+        in_args = input_args(in_format)
+        out_args = output_args(out_format)
+
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            *in_args,
+            "-i",
+            "pipe:0",
+            *out_args,
+            "pipe:1",
+        ]
+
+        logger.info(
+            "[FFMPEG] cmd=%s (input_len=%d)",
+            " ".join(cmd),
+            len(data),
+        )
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=data,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        except OSError as exc:
+            logger.error("ffmpeg execution failed: %s", exc, exc_info=True)
+            raise ValueError(f"ffmpeg execution failed: {exc}") from exc
+
+        if proc.returncode != 0:
+            message = proc.stderr.decode("utf-8", errors="ignore") or str(
+                proc.returncode
+            )
+            logger.error(
+                "ffmpeg transcoding failed in=%s@%dHz ch=%d -> out=%s@%dHz: %s",
+                in_format,
+                in_rate,
+                in_channels,
+                out_format,
+                out_rate,
+                message,
+            )
+            raise ValueError(f"ffmpeg transcoding failed: {message}")
+
+        out = proc.stdout or b""
+        if not out:
+            logger.error(
+                "ffmpeg produced no output data in=%s@%dHz ch=%d -> out=%s@%dHz",
+                in_format,
+                in_rate,
+                in_channels,
+                out_format,
+                out_rate,
+            )
+            raise ValueError("ffmpeg produced no output data")
+
+        logger.info("[FFMPEG] produced %d bytes of audio data", len(out))
+        return out

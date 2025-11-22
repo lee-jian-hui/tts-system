@@ -5,16 +5,22 @@ from typing import Dict, Iterable
 from .base import BaseTTSProvider, ProviderVoice
 from .mock_tone import MockToneProvider
 from . import CoquiTTSProvider
+from app.config import settings
 
 
 class ProviderRegistry:
     """Simple in-memory registry for TTS providers."""
 
     def __init__(self) -> None:
-        providers: Dict[str, BaseTTSProvider] = {
-            MockToneProvider().id: MockToneProvider(),
-            CoquiTTSProvider().id: CoquiTTSProvider()
-        }
+        providers: Dict[str, BaseTTSProvider] = {}
+
+        if settings.mock_tone_enabled:
+            mock = MockToneProvider()
+            providers[mock.id] = mock
+
+        if settings.coqui_enabled:
+            coqui = CoquiTTSProvider()
+            providers[coqui.id] = coqui
 
         self._providers = providers
 
