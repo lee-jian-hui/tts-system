@@ -40,11 +40,16 @@ function App() {
   const [voicesLoading, setVoicesLoading] = useState(false)
   const [voicesError, setVoicesError] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
+  const [latencyMs, setLatencyMs] = useState<number | null>(null)
+  const [droppedFrames, setDroppedFrames] = useState(0)
 
   // Web Audio state for live PCM16 streaming
   const audioCtxRef = useRef<AudioContext | null>(null)
   const playheadRef = useRef<number>(0)
   const audioStartedRef = useRef<boolean>(false)
+  const sessionStartRef = useRef<number | null>(null)
+  const lastSeqRef = useRef<number | null>(null)
+  const firstChunkSeenRef = useRef<boolean>(false)
 
   const enqueuePcmChunk = (pcmBytes: Uint8Array, streamSampleRate: number) => {
     const ctx = audioCtxRef.current
@@ -137,6 +142,11 @@ function App() {
     setLastError(null)
     setBytes(0)
     setChunks(0)
+    setLatencyMs(null)
+    setDroppedFrames(0)
+    lastSeqRef.current = null
+    firstChunkSeenRef.current = false
+    sessionStartRef.current = performance.now()
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl)
       setAudioUrl(null)
@@ -220,23 +230,34 @@ function App() {
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err, event.data)
         setLastError('Failed to parse WebSocket message. See console for details.')
+        setDroppedFrames((d) => d + 1)
         return
       }
       if (msg.type === 'audio') {
+        const seq = msg.seq
+        if (lastSeqRef.current != null && seq !== lastSeqRef.current + 1) {
+          const gap = seq - lastSeqRef.current - 1
+          if (gap > 0) {
+            setDroppedFrames((d) => d + gap)
+          }
+        }
+        lastSeqRef.current = seq
+
         const chunkBytes = base64ToBytes(msg.data)
         // Live streaming path for PCM16 via Web Audio.
         if (format === 'pcm16') {
           try {
             enqueuePcmChunk(chunkBytes, streamSampleRate)
-              if (!audioStartedRef.current) {
-                setStatus('Playing (live)...')
-                audioStartedRef.current = true
-              }
+            if (!audioStartedRef.current) {
+              setStatus('Playing (live)...')
+              audioStartedRef.current = true
+            }
           } catch (err) {
             console.error('Failed to enqueue PCM chunk:', err)
             setLastError(
               'Failed to enqueue PCM chunk for playback. See console for details.',
             )
+            setDroppedFrames((d) => d + 1)
           }
         } else {
           // File-oriented path for container formats (wav/mp3).
@@ -245,6 +266,12 @@ function App() {
         totalBytes += chunkBytes.length
         setBytes(totalBytes)
         setChunks((c) => c + 1)
+        if (!firstChunkSeenRef.current) {
+          if (sessionStartRef.current != null) {
+            setLatencyMs(performance.now() - sessionStartRef.current)
+          }
+          firstChunkSeenRef.current = true
+        }
       } else if (msg.type === 'eos') {
         if (format === 'pcm16') {
           setStatus(
@@ -290,6 +317,7 @@ function App() {
       console.error('WebSocket error', event)
       setLastError('WebSocket error (see console for event details).')
       setStatus('WebSocket error.')
+      setIsStreaming(false)
     }
 
     ws.onclose = (event: CloseEvent) => {
@@ -317,13 +345,11 @@ function App() {
         provider={provider}
         voice={voice}
         targetFormat={targetFormat}
-        sampleRate={sampleRate}
         voices={voices}
         onTextChange={setText}
         onProviderChange={setProvider}
         onVoiceChange={setVoice}
         onTargetFormatChange={setTargetFormat}
-        onSampleRateChange={setSampleRate}
         onSubmit={handleSubmit}
       />
 
@@ -331,6 +357,8 @@ function App() {
         status={status}
         bytes={bytes}
         chunks={chunks}
+        latencyMs={latencyMs}
+        droppedFrames={droppedFrames}
         voicesLoading={voicesLoading}
         voicesError={voicesError}
         lastError={lastError}

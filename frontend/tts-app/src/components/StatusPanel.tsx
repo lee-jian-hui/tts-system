@@ -2,6 +2,8 @@ interface Props {
   status: string
   bytes: number
   chunks: number
+  latencyMs: number | null
+  droppedFrames: number
   voicesLoading: boolean
   voicesError: string | null
   lastError: string | null
@@ -12,6 +14,8 @@ export function StatusPanel({
   status,
   bytes,
   chunks,
+  latencyMs,
+  droppedFrames,
   voicesLoading,
   voicesError,
   lastError,
@@ -27,6 +31,15 @@ export function StatusPanel({
       </p>
       <p>
         Chunks: <span>{chunks}</span>
+      </p>
+      {latencyMs != null && (
+        <p>
+          First chunk latency:{' '}
+          <span>{latencyMs.toFixed(0)} ms</span>
+        </p>
+      )}
+      <p>
+        Dropped frames: <span>{droppedFrames}</span>
       </p>
       {isStreaming && (
         <div className="streaming-indicator">
