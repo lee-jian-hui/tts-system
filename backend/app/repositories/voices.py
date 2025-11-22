@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from voice_tts_kr.models import Voice, AudioFormat
-from voice_tts_kr.providers import ProviderRegistry
+from ..models import Voice, AudioFormat
+from ..providers import ProviderRegistry
 
 
 class VoiceRepository:

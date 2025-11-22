@@ -46,9 +46,8 @@ class HealthResponse(BaseModel):
 class AudioChunkMessage(BaseModel):
     type: Literal["audio"]
     seq: int
-    data: bytes  # or base64 string if JSON encoding is used on the wire
+    data: str  # base64-encoded audio bytes
 
 
 class EndOfStreamMessage(BaseModel):
     type: Literal["eos"]
-

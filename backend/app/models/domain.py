@@ -8,7 +8,7 @@ from typing import Optional
 from .api import AudioFormat
 
 
-class SessionStatus(str, Enum):
+class SessionStatus(Enum):
     PENDING = "pending"
     STREAMING = "streaming"
     COMPLETED = "completed"

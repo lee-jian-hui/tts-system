@@ -43,20 +43,6 @@ python -m voice_tts_kr.cli --text "안녕하세요, 테스트입니다." --out o
 ## Project layout
 
 ```
-.
-├─ app/
-│  └─ main.py               # FastAPI app
-├─ voice_tts_kr/
-│  ├─ __init__.py
-│  ├─ audio.py              # WAV encoding helpers
-│  ├─ engines/
-│  │  ├─ __init__.py
-│  │  ├─ base.py            # Engine interface
-│  │  └─ dummy.py           # Dummy tone engine (MVP)
-│  └─ settings.py           # Config and engine selection
-│  └─ cli.py                # CLI entry
-├─ requirements.txt
-└─ README.md
 ```
 
 ## Notes
@@ -66,7 +52,4 @@ python -m voice_tts_kr.cli --text "안녕하세요, 테스트입니다." --out o
 
 ## Adding a real TTS engine later
 
-1) Create `voice_tts_kr/engines/my_engine.py` implementing `BaseTTSEngine`.
-2) Register it in `voice_tts_kr/settings.py`.
-3) Expose any voice options in `/voices`.
 

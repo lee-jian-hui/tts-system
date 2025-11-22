@@ -3,14 +3,14 @@ from __future__ import annotations
 from typing import AsyncIterator
 from uuid import uuid4
 
-from voice_tts_kr.models import (
+from app.models import (
     CreateTTSSessionRequest,
     TTSSession,
     SessionStatus,
     AudioFormat,
 )
-from voice_tts_kr.providers import ProviderRegistry
-from voice_tts_kr.repositories import TTSSessionRepository
+from app.providers import ProviderRegistry
+from app.repositories import TTSSessionRepository
 from .transcode_service import AudioTranscodeService
 
 
@@ -72,4 +72,3 @@ class TTSService:
             raise
         else:
             self._sessions.update_status(session.id, SessionStatus.COMPLETED)
-

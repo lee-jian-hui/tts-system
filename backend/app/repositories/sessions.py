@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import RLock
 from typing import Dict, Optional, Protocol
 
-from voice_tts_kr.models import TTSSession, SessionStatus
+from ..models import TTSSession, SessionStatus
 
 
 class TTSSessionRepository(Protocol):
