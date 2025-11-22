@@ -11,11 +11,14 @@ import websockets
 
 
 BASE_URL = "http://localhost:8080"
-TEXT = "Hello KeyReply – streaming test!"
+TEXT = "Hello JOCELYN Koay Chia wen – streaming test!"
 PROVIDER_ID = "coqui_tts"
 VOICE_ID = "coqui-en-1"
 TARGET_FORMAT = "pcm16"
-SAMPLE_RATE_HZ = 16000
+# Must match the Coqui model output sample rate (22050 Hz for
+# tts_models/en/ljspeech/tacotron2-DDC) so the PCM16 transcoder
+# accepts the chunks without resampling.
+SAMPLE_RATE_HZ = 22050
 
 
 def create_session() -> Dict[str, Any]:

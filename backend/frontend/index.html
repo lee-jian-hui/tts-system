@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TTS Gateway Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <h1>TTS Gateway Demo</h1>
+
+    <form id="tts-form">
+      <div>
+        <label for="text">Text</label><br />
+        <textarea id="text" rows="3">Hello KeyReply – streaming test!</textarea>
+      </div>
+
+      <div>
+        <label for="provider">Provider</label><br />
+        <select id="provider">
+          <option value="mock_tone">Mock Tone</option>
+          <option value="coqui_tts">Coqui TTS</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="voice">Voice</label><br />
+        <input id="voice" value="coqui-en-1" />
+      </div>
+
+      <div>
+        <label for="target-format">Target format</label><br />
+        <select id="target-format">
+          <option value="pcm16">pcm16 (raw)</option>
+          <option value="wav">wav</option>
+          <option value="mp3">mp3</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="sample-rate">Sample rate (Hz)</label><br />
+        <input id="sample-rate" type="number" value="16000" />
+      </div>
+
+      <button type="submit">Start Session</button>
+    </form>
+
+    <section id="status-panel">
+      <p>Status: <span id="status">Idle</span></p>
+      <p>Bytes received: <span id="bytes">0</span></p>
+      <p>Chunks: <span id="chunks">0</span></p>
+    </section>
+
+    <section>
+      <audio id="player" controls></audio>
+    </section>
+
+    <script src="./main.js"></script>
+  </body>
+  </html>
+
