@@ -68,7 +68,6 @@ body {
   background-color: #4b5563;
   color: #f9fafb;
   font-weight: 600;
-  cursor: pointer;
 }
 
 .tts-form button[type='submit']:hover {

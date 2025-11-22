@@ -33,11 +33,13 @@ function App() {
   const [bytes, setBytes] = useState(0)
   const [chunks, setChunks] = useState(0)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+   const [lastError, setLastError] = useState<string | null>(null)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
 
     setStatus('Creating session...')
+    setLastError(null)
     setBytes(0)
     setChunks(0)
     if (audioUrl) {
@@ -68,20 +70,44 @@ function App() {
       setStatus(`Session ${session_id} created. Connecting WebSocket...`)
       await streamAudio(ws_url, payload.target_format)
     } catch (err) {
-      console.error(err)
-      setStatus(`Error: ${String(err)}`)
+      console.error('Error creating session or streaming:', err)
+      const message =
+        err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      setLastError(message)
+      setStatus('Error while creating session or streaming. See error details below.')
     }
   }
 
   const streamAudio = async (wsUrl: string, format: TargetFormat) => {
-    const ws = new WebSocket(wsUrl)
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(wsUrl)
+    } catch (err) {
+      console.error('Failed to construct WebSocket:', err)
+      const message =
+        err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      setLastError(message)
+      setStatus('Failed to open WebSocket.')
+      return
+    }
     const chunksArr: Uint8Array[] = []
     let totalBytes = 0
 
     setStatus('Streaming audio...')
 
+    ws.onopen = () => {
+      console.debug('WebSocket opened:', wsUrl)
+    }
+
     ws.onmessage = (event: MessageEvent<string>) => {
-      const msg = JSON.parse(event.data) as WsMessage
+      let msg: WsMessage
+      try {
+        msg = JSON.parse(event.data) as WsMessage
+      } catch (err) {
+        console.error('Failed to parse WebSocket message:', err, event.data)
+        setLastError('Failed to parse WebSocket message. See console for details.')
+        return
+      }
       if (msg.type === 'audio') {
         const chunkBytes = base64ToBytes(msg.data)
         chunksArr.push(chunkBytes)
@@ -112,18 +138,30 @@ function App() {
         } else {
           setStatus('Ready (audio element not found).')
         }
+      } else {
+        console.warn('Received unknown WebSocket message type:', msg)
+        setLastError(`Unknown WebSocket message type: ${(msg as any).type}`)
       }
     }
 
     ws.onerror = (event) => {
       console.error('WebSocket error', event)
+      setLastError('WebSocket error (see console for event details).')
       setStatus('WebSocket error.')
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
+      console.warn('WebSocket closed:', event)
       setStatus((s) =>
-        s.startsWith('Streaming') ? 'WebSocket closed unexpectedly.' : s,
+        s.startsWith('Streaming')
+          ? `WebSocket closed unexpectedly (code=${event.code}, reason="${event.reason || 'none'}").`
+          : s,
       )
+      if (!event.wasClean) {
+        setLastError(
+          `WebSocket closed uncleanly (code=${event.code}, reason="${event.reason || 'none'}").`,
+        )
+      }
     }
   }
 
@@ -199,6 +237,11 @@ function App() {
         <p>
           Chunks: <span>{chunks}</span>
         </p>
+        {lastError && (
+          <p>
+            <strong>Last error:</strong> {lastError}
+          </p>
+        )}
       </section>
 
       <section className="player-section">
