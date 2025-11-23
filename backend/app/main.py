@@ -16,6 +16,7 @@ from app.models import (
     HealthResponse,
     AudioChunkMessage,
     EndOfStreamMessage,
+    ErrorMessage,
     Voice,
 )
 from app.logging_utils import get_logger
@@ -157,13 +158,20 @@ async def stream_tts(websocket: WebSocket, session_id: str) -> None:
         # Client disconnected; nothing special to do.
         return
     except ValueError as exc:
-        # Unknown session or validation/transcoding error.
+        # Unknown session or validation/transcoding error. Surface a structured
+        # error message before closing the socket.
         logger.error(
             "WebSocket stream error for session %s: %s",
             session_id,
             exc,
             exc_info=True,
         )
+        err = ErrorMessage(type="error", code=400, message=str(exc))
+        try:
+            await websocket.send_json(err.dict())
+        except Exception:
+            # Best-effort; if sending the error fails, just close.
+            pass
         await websocket.close(code=1011, reason=str(exc))
     except Exception as exc:  # pragma: no cover - defensive
         # Internal error; close with generic server error code.
@@ -172,4 +180,9 @@ async def stream_tts(websocket: WebSocket, session_id: str) -> None:
             session_id,
             exc_info=True,
         )
+        err = ErrorMessage(type="error", code=500, message="internal error")
+        try:
+            await websocket.send_json(err.dict())
+        except Exception:
+            pass
         await websocket.close(code=1011, reason="internal error")

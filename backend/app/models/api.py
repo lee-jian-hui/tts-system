@@ -51,3 +51,9 @@ class AudioChunkMessage(BaseModel):
 
 class EndOfStreamMessage(BaseModel):
     type: Literal["eos"]
+
+
+class ErrorMessage(BaseModel):
+    type: Literal["error"]
+    code: int
+    message: str

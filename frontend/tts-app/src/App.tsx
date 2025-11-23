@@ -22,7 +22,13 @@ interface EosMessage {
   type: 'eos'
 }
 
-type WsMessage = AudioMessage | EosMessage
+interface ErrorMessage {
+  type: 'error'
+  code: number
+  message: string
+}
+
+type WsMessage = AudioMessage | EosMessage | ErrorMessage
 
 function App() {
   const [text, setText] = useState('Hello KeyReply – streaming test!')
@@ -318,6 +324,10 @@ function App() {
             setStatus('Ready (audio element not found).')
           }
         }
+      } else if (msg.type === 'error') {
+        console.error('Received stream error from server:', msg)
+        setLastError(msg.message)
+        setStatus(`Stream error (code=${msg.code}): ${msg.message}`)
       } else {
         console.warn('Received unknown WebSocket message type:', msg)
         setLastError(`Unknown WebSocket message type: ${(msg as any).type}`)

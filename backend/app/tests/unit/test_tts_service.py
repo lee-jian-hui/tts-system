@@ -8,7 +8,11 @@ from app.models import CreateTTSSessionRequest, SessionStatus
 from app.providers import ProviderRegistry
 from app.repositories import InMemoryTTSSessionRepository
 from app.services import AudioTranscodeService, TTSService
-from app.services.circuit_breaker import CircuitBreakerConfig, CircuitBreakerRegistry
+from app.services.circuit_breaker import (
+    CircuitBreakerConfig,
+    CircuitBreakerRegistry,
+)
+from app.services.rate_limiter import RateLimitConfig, RateLimiter
 
 
 def _build_tts_service() -> tuple[TTSService, InMemoryTTSSessionRepository]:
@@ -86,7 +90,11 @@ class _FailingProvider:
     async def list_voices(self) -> list[object]:
         return []
 
-    async def stream_synthesize(self, *, text: str, voice_id: str, language: str | None = None):  # type: ignore[override]  # noqa: E501
+    async def stream_synthesize(
+        self, *, text: str, voice_id: str, language: str | None = None
+    ):  # type: ignore[override]
+        if False:  # pragma: no cover - generator placeholder
+            yield b""  # type: ignore[misc]
         raise RuntimeError("synthetic provider failure")
 
 
@@ -109,7 +117,6 @@ class _SingleProviderRegistry:
 async def test_stream_session_audio_trips_circuit_breaker_after_failures() -> None:
     """Repeated provider failures should open the circuit and block new streams."""
 
-    # Configure a breaker that opens after two failures.
     breaker_cfg = CircuitBreakerConfig(failure_threshold=2, reset_timeout_seconds=60)
     breakers = CircuitBreakerRegistry(config=breaker_cfg)
 
@@ -135,7 +142,6 @@ async def test_stream_session_audio_trips_circuit_breaker_after_failures() -> No
             language="en-US",
         )
 
-    # First two attempts should invoke the provider and fail.
     for _ in range(2):
         session = service.create_session(make_req())
         with pytest.raises(RuntimeError):
@@ -145,7 +151,6 @@ async def test_stream_session_audio_trips_circuit_breaker_after_failures() -> No
         assert stored is not None
         assert stored.status == SessionStatus.FAILED
 
-    # Third attempt should be rejected immediately by the circuit breaker.
     blocked_session = service.create_session(make_req())
     with pytest.raises(ValueError) as exc_info:
         async for _chunk in service.stream_session_audio(blocked_session.id):
@@ -165,21 +170,21 @@ class _SometimesSlowProvider:
     async def list_voices(self) -> list[object]:
         return []
 
-    async def stream_synthesize(self, *, text: str, voice_id: str, language: str | None = None):  # type: ignore[override]  # noqa: E501
-        self.calls += 1
-        # First call never yields; second call yields a single tiny chunk.
-        if self.calls == 1:
-            while False:  # pragma: no cover - generator placeholder
-                yield b""  # type: ignore[misc]
-        else:
-            from app.providers import AudioChunk
+    async def stream_synthesize(
+        self, *, text: str, voice_id: str, language: str | None = None
+    ):  # type: ignore[override]
+        from app.providers import AudioChunk
 
-            yield AudioChunk(
-                data=b"\x00\x01",
-                sample_rate_hz=16000,
-                num_channels=1,
-                format="pcm16",  # type: ignore[arg-type]
-            )
+        self.calls += 1
+        if self.calls == 1:
+            raise asyncio.TimeoutError()
+
+        yield AudioChunk(
+            data=b"\x00\x01",
+            sample_rate_hz=16000,
+            num_channels=1,
+            format="pcm16",  # type: ignore[arg-type]
+        )
 
 
 class _RegistryForSlowProvider:
@@ -196,8 +201,8 @@ class _RegistryForSlowProvider:
 
 
 @pytest.mark.asyncio
-async def test_stream_session_audio_retries_after_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """If the provider times out before producing audio, TTSService should retry."""
+async def test_stream_session_audio_retries_after_timeout() -> None:
+    """If the provider fails with a timeout before producing audio, TTSService should retry."""
 
     slow_provider = _SometimesSlowProvider()
     registry = _RegistryForSlowProvider(slow_provider)
@@ -205,7 +210,6 @@ async def test_stream_session_audio_retries_after_timeout(monkeypatch: pytest.Mo
     transcode = AudioTranscodeService()
     breakers = CircuitBreakerRegistry()
 
-    # Use small timeout and two attempts.
     service = TTSService(
         provider_registry=registry,  # type: ignore[arg-type]
         session_repo=repo,
@@ -214,19 +218,6 @@ async def test_stream_session_audio_retries_after_timeout(monkeypatch: pytest.Mo
         provider_timeout_seconds=0.01,
         provider_max_retries=2,
     )
-
-    # Monkeypatch asyncio.wait_for so that the first call times out,
-    # and the second call behaves normally.
-    real_wait_for = asyncio.wait_for
-    call_count = {"value": 0}
-
-    async def fake_wait_for(awaitable, timeout=None):  # type: ignore[no-untyped-def]
-        call_count["value"] += 1
-        if call_count["value"] == 1:
-            raise asyncio.TimeoutError()
-        return await real_wait_for(awaitable, timeout)
-
-    monkeypatch.setattr("app.services.tts_service.asyncio.wait_for", fake_wait_for)
 
     req = CreateTTSSessionRequest(
         provider=slow_provider.id,
@@ -242,8 +233,99 @@ async def test_stream_session_audio_retries_after_timeout(monkeypatch: pytest.Mo
     async for chunk in service.stream_session_audio(session.id):
         chunks.append(chunk)
 
-    # We should have eventually received audio from the second attempt.
     assert len(chunks) == 1
     stored = repo.get(session.id)
     assert stored is not None
     assert stored.status == SessionStatus.COMPLETED
+
+
+def test_circuit_breaker_allows_requests_until_threshold() -> None:
+    cfg = CircuitBreakerConfig(failure_threshold=3, reset_timeout_seconds=60)
+    registry = CircuitBreakerRegistry(config=cfg)
+    key = "provider-a"
+
+    assert registry.allow_request(key) is True
+
+    registry.record_failure(key)
+    assert registry.allow_request(key) is True
+
+    registry.record_failure(key)
+    assert registry.allow_request(key) is True
+
+    registry.record_failure(key)
+    assert registry.allow_request(key) is False
+
+
+def test_circuit_breaker_moves_to_half_open_after_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = CircuitBreakerConfig(failure_threshold=1, reset_timeout_seconds=10)
+    registry = CircuitBreakerRegistry(config=cfg)
+    key = "provider-b"
+
+    fake_time = [1000.0]
+
+    def fake_time_func() -> float:
+        return fake_time[0]
+
+    monkeypatch.setattr("app.services.circuit_breaker.time.time", fake_time_func)
+
+    registry.record_failure(key)
+    assert registry.allow_request(key) is False
+
+    fake_time[0] += 11
+    assert registry.allow_request(key) is True
+
+
+def test_circuit_breaker_resets_on_success_after_half_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = CircuitBreakerConfig(failure_threshold=1, reset_timeout_seconds=5)
+    registry = CircuitBreakerRegistry(config=cfg)
+    key = "provider-c"
+
+    fake_time = [2000.0]
+
+    def fake_time_func() -> float:
+        return fake_time[0]
+
+    monkeypatch.setattr("app.services.circuit_breaker.time.time", fake_time_func)
+
+    registry.record_failure(key)
+    assert registry.allow_request(key) is False
+
+    fake_time[0] += 6
+    assert registry.allow_request(key) is True
+
+    registry.record_success(key)
+    assert registry.allow_request(key) is True
+
+
+def test_rate_limiter_allows_requests_within_window() -> None:
+    cfg = RateLimitConfig(max_requests_per_window=2, window_seconds=60)
+    limiter = RateLimiter(config=cfg)
+    key = "1.2.3.4"
+
+    assert limiter.allow_request(key) is True
+    assert limiter.allow_request(key) is True
+    assert limiter.allow_request(key) is False
+
+
+def test_rate_limiter_resets_after_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = RateLimitConfig(max_requests_per_window=1, window_seconds=10)
+    limiter = RateLimiter(config=cfg)
+    key = "5.6.7.8"
+
+    fake_time = [1000.0]
+
+    def fake_time_func() -> float:
+        return fake_time[0]
+
+    monkeypatch.setattr("app.services.rate_limiter.time.time", fake_time_func)
+
+    assert limiter.allow_request(key) is True
+    assert limiter.allow_request(key) is False
+
+    fake_time[0] += 11
+    assert limiter.allow_request(key) is True
+
