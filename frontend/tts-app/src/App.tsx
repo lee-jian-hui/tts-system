@@ -5,7 +5,9 @@ import { StatusPanel } from './components/StatusPanel'
 import { PlayerSection } from './components/PlayerSection'
 import type { TargetFormat, VoiceInfo } from './types'
 
-const BASE_URL = 'http://localhost:8080'
+const BASE_URL =
+  // Prefer Vite env var when running via Docker / build-time config.
+  import.meta.env.VITE_TTS_API_BASE_URL ?? 'http://localhost:8080'
 
 interface SessionResponse {
   session_id: string
