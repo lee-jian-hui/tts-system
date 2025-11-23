@@ -16,7 +16,7 @@ def _should_use_gpu() -> bool:
     try:
         import torch  # type: ignore[import]
 
-        return bool(getattr(torch.cuda, "is_available", lambda: False)())
+        return torch.cuda.is_available()
     except Exception:
         return False
 

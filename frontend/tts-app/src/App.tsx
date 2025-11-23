@@ -174,9 +174,9 @@ function App() {
     if (targetFormat === 'pcm16') {
       if (!audioCtxRef.current) {
         const AC =
-          window.AudioContext ||
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (window as any).webkitAudioContext
+          window.AudioContext
+          // support for old browsers
+          // || (window as any).webkitAudioContext
         audioCtxRef.current = new AC()
       }
       await audioCtxRef.current!.resume()

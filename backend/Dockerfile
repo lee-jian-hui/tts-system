@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY . /app
 
 # Install Python dependencies using uv (reads pyproject.toml / uv.lock)
+# Increase HTTP timeout to make large wheels (e.g. torch) more robust to slow
+# networks during the image build.
+ENV UV_HTTP_TIMEOUT=300
 RUN pip install --no-cache-dir uv && \
     uv pip install --system --no-cache-dir .
 
