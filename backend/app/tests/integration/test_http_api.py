@@ -78,11 +78,9 @@ def test_create_session_is_rate_limited(
     cfg = RateLimitConfig(max_requests_per_window=2, window_seconds=60)
     limiter = RateLimiter(config=cfg)
 
-    # Monkeypatch the container-level limiter used by the router.
-    from app import container
-
-    container.get_rate_limiter.cache_clear()
-    container.get_rate_limiter = lambda: limiter  # type: ignore[assignment]
+    # Override the rate limiter used by the API router using monkeypatch so it
+    # is automatically restored after the test.
+    monkeypatch.setattr("app.api.get_rate_limiter", lambda: limiter)
 
     url = "/v1/tts/sessions"
     payload = _valid_session_payload()

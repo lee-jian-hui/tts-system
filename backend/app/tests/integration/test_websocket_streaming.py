@@ -36,10 +36,10 @@ def client_with_sequencing_stub(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     stub = _SequencingTestTTSService()
     app = create_app()
 
-    from app import container
-
-    container.get_tts_service.cache_clear()
-    container.get_tts_service = lambda: stub  # type: ignore[assignment]
+    # Ensure both the API module and container return our stub service. Use
+    # monkeypatch so the overrides are automatically restored after the test.
+    monkeypatch.setattr("app.container.get_tts_service", lambda: stub)
+    monkeypatch.setattr("app.api.get_tts_service", lambda: stub)
 
     return TestClient(app)
 
