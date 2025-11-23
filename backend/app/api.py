@@ -36,6 +36,12 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+@router.get("/", response_class=PlainTextResponse)
+async def root() -> PlainTextResponse:
+    """Simple root endpoint for quick sanity checks."""
+    return PlainTextResponse("hi there from KeyReply", media_type="text/plain")
+
+
 @router.get("/healthz", response_model=HealthResponse)
 async def healthz() -> HealthResponse:
     return HealthResponse(status="ok")
@@ -152,4 +158,3 @@ async def stream_tts(websocket: WebSocket, session_id: str) -> None:
         except Exception:
             pass
         await websocket.close(code=1011, reason="internal error")
-

@@ -15,6 +15,9 @@ class AppConfig:
     mock_tone_enabled: bool = os.getenv("MOCK_TONE_ENABLED", "1") != "0"
 
     coqui_enabled: bool = os.getenv("COQUI_ENABLED", "1") != "0"
+    # Optional explicit model path; if set, the Coqui provider will load the
+    # model from this path instead of downloading by name.
+    coqui_model_path: str | None = os.getenv("COQUI_MODEL_PATH") or None
     coqui_model_name: str = os.getenv(
         "COQUI_MODEL_NAME", "tts_models/en/ljspeech/tacotron2-DDC"
     )
@@ -22,4 +25,3 @@ class AppConfig:
 
 
 settings = AppConfig()
-

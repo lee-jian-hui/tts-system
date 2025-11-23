@@ -6,6 +6,20 @@ from .base import AudioChunk, BaseTTSProvider, ProviderVoice
 from app.config import settings
 from TTS.api import TTS as CoquiTTS  # type: ignore[import]
 
+
+def _should_use_gpu() -> bool:
+    """Return True if a GPU appears to be available for Coqui TTS.
+
+    This uses torch.cuda.is_available() if torch is installed; otherwise it
+    falls back to CPU.
+    """
+    try:
+        import torch  # type: ignore[import]
+
+        return bool(getattr(torch.cuda, "is_available", lambda: False)())
+    except Exception:
+        return False
+
 class CoquiTTSProvider(BaseTTSProvider):
     """Offline TTS provider backed by Coqui TTS.
 
@@ -22,10 +36,24 @@ class CoquiTTSProvider(BaseTTSProvider):
         language: str | None = None,
         chunk_size_frames: int = 1600,
     ) -> None:
-        # A commonly used English Coqui model; users can override this.
+        # A commonly used English Coqui model; users can override this. If an
+        # explicit COQUI_MODEL_PATH is provided, load from that path instead of
+        # downloading by model name.
         self._model_name = model_name or settings.coqui_model_name
         self._language = language or settings.coqui_language
-        self._tts = CoquiTTS(model_name=self._model_name, progress_bar=False, gpu=False)
+        use_gpu = _should_use_gpu()
+        if settings.coqui_model_path:
+            self._tts = CoquiTTS(
+                model_path=settings.coqui_model_path,
+                progress_bar=False,
+                gpu=use_gpu,
+            )
+        else:
+            self._tts = CoquiTTS(
+                model_name=self._model_name,
+                progress_bar=False,
+                gpu=use_gpu,
+            )
 
         # Coqui exposes the output sample rate via synthesizer.
         self._sample_rate_hz = int(getattr(self._tts.synthesizer, "output_sample_rate", 22050))
