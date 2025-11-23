@@ -5,13 +5,14 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import create_app
 from app.metrics import TTS_SESSIONS_TOTAL
 from app.services.rate_limiter import RateLimitConfig, RateLimiter
 
 
 @pytest.fixture
 def client() -> TestClient:
+    app = create_app()
     return TestClient(app)
 
 
@@ -77,7 +78,11 @@ def test_create_session_is_rate_limited(
     cfg = RateLimitConfig(max_requests_per_window=2, window_seconds=60)
     limiter = RateLimiter(config=cfg)
 
-    monkeypatch.setattr("app.main.get_rate_limiter", lambda: limiter)
+    # Monkeypatch the container-level limiter used by the router.
+    from app import container
+
+    container.get_rate_limiter.cache_clear()
+    container.get_rate_limiter = lambda: limiter  # type: ignore[assignment]
 
     url = "/v1/tts/sessions"
     payload = _valid_session_payload()
@@ -91,4 +96,3 @@ def test_create_session_is_rate_limited(
     r3 = client.post(url, json=payload)
     assert r3.status_code == 429
     assert "Rate limit exceeded" in r3.json().get("detail", "")
-

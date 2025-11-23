@@ -9,36 +9,36 @@ from app.services.circuit_breaker import CircuitBreakerRegistry
 from app.services.rate_limiter import RateLimiter
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_provider_registry() -> ProviderRegistry:
-  return ProviderRegistry()
+    return ProviderRegistry()
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_session_repo() -> InMemoryTTSSessionRepository:
     return InMemoryTTSSessionRepository()
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_transcode_service() -> AudioTranscodeService:
-  return AudioTranscodeService()
+    return AudioTranscodeService()
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_circuit_breaker_registry() -> CircuitBreakerRegistry:
-  return CircuitBreakerRegistry()
+    return CircuitBreakerRegistry()
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_rate_limiter() -> RateLimiter:
-  return RateLimiter()
+    return RateLimiter()
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_tts_service() -> TTSService:
-  return TTSService(
-    provider_registry=get_provider_registry(),
-    session_repo=get_session_repo(),
-    transcode_service=get_transcode_service(),
-    circuit_breakers=get_circuit_breaker_registry(),
-  )
+    return TTSService(
+        provider_registry=get_provider_registry(),
+        session_repo=get_session_repo(),
+        transcode_service=get_transcode_service(),
+        circuit_breakers=get_circuit_breaker_registry(),
+    )

@@ -13,7 +13,6 @@ from app.models import (
 from app.providers import ProviderRegistry
 from app.repositories import TTSSessionRepository
 from app import metrics as app_metrics
-from backend.app.providers.base import AudioChunk
 from .transcode_service import AudioTranscodeService
 from .circuit_breaker import CircuitBreakerRegistry
 

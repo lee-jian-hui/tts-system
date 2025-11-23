@@ -6,7 +6,7 @@ from typing import AsyncIterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import create_app
 from app.models import CreateTTSSessionRequest
 
 
@@ -34,7 +34,13 @@ class _SequencingTestTTSService:
 @pytest.fixture
 def client_with_sequencing_stub(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     stub = _SequencingTestTTSService()
-    monkeypatch.setattr("app.main.get_tts_service", lambda: stub)
+    app = create_app()
+
+    from app import container
+
+    container.get_tts_service.cache_clear()
+    container.get_tts_service = lambda: stub  # type: ignore[assignment]
+
     return TestClient(app)
 
 
@@ -71,4 +77,3 @@ def test_websocket_chunk_sequencing_is_strictly_incremental(
                 pytest.fail(f"Unexpected message type {msg_type!r}")
 
         assert expected_seq == 4
-

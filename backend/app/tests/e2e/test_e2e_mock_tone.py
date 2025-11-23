@@ -5,10 +5,10 @@ from typing import List
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import create_app
 
 
-client = TestClient(app)
+client = TestClient(create_app())
 
 
 def _run_single_flow(

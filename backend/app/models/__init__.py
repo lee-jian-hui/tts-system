@@ -7,6 +7,7 @@ from .api import (
     HealthResponse,
     AudioChunkMessage,
     EndOfStreamMessage,
+    ErrorMessage,
 )
 from .domain import SessionStatus, TTSSession
 
@@ -19,7 +20,7 @@ __all__ = [
     "HealthResponse",
     "AudioChunkMessage",
     "EndOfStreamMessage",
+    "ErrorMessage",
     "SessionStatus",
     "TTSSession",
 ]
-
