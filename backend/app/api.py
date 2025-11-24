@@ -11,7 +11,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.models import (
@@ -29,7 +29,10 @@ from app.container import (
     get_provider_registry,
     get_tts_service,
     get_rate_limiter,
+    get_session_repo,
+    get_transcode_service,
 )
+from app.providers import AudioChunk as ProviderAudioChunk
 
 
 logger = get_logger(__name__)
@@ -158,3 +161,66 @@ async def stream_tts(websocket: WebSocket, session_id: str) -> None:
         except Exception:
             pass
         await websocket.close(code=1011, reason="internal error")
+
+
+@router.get("/v1/tts/sessions/{session_id}/file")
+async def get_session_file(
+    session_id: str,
+    format: Optional[str] = None,
+) -> Response:
+    """Return a full audio file for a completed session.
+
+    This endpoint is intended for container formats (wav/mp3) where the frontend
+    expects a single valid file rather than concatenated per-chunk encodings.
+    Internally, we re-run provider synthesis to obtain the audio and then
+    transcode it once into the requested format.
+    """
+
+    sessions = get_session_repo()
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Unknown session '{session_id}'")
+
+    target_format = format or session.target_format
+
+    registry = get_provider_registry()
+    provider = registry.get(session.provider)
+
+    pcm_buf = bytearray()
+    sample_rate = None
+    num_channels = 1
+
+    async for chunk in provider.stream_synthesize(
+        text=session.text,
+        voice_id=session.voice,
+        language=session.language,
+    ):
+        if sample_rate is None:
+            sample_rate = chunk.sample_rate_hz
+            num_channels = chunk.num_channels
+        pcm_buf.extend(chunk.data)
+
+    if sample_rate is None:
+        raise HTTPException(status_code=500, detail="Provider produced no audio data")
+
+    full_chunk = ProviderAudioChunk(
+        data=bytes(pcm_buf),
+        sample_rate_hz=sample_rate,
+        num_channels=num_channels,
+        format="pcm16",
+    )
+
+    encoded = await get_transcode_service().transcode_chunk(
+        full_chunk,
+        target_format=target_format,  # type: ignore[arg-type]
+        sample_rate_hz=session.sample_rate_hz,
+    )
+
+    if target_format == "mp3":
+        media_type = "audio/mpeg"
+    elif target_format == "wav":
+        media_type = "audio/wav"
+    else:
+        media_type = "application/octet-stream"
+
+    return Response(content=encoded, media_type=media_type)

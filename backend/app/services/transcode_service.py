@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import Enum
 
 import subprocess
+import asyncio
 
 from app.models import AudioFormat
 from app.providers import AudioChunk
@@ -51,7 +52,8 @@ class AudioTranscodeService:
             return chunk.data
 
         # Route all other cases through ffmpeg CLI.
-        return self._ffmpeg_transcode(
+        return await asyncio.to_thread(
+            self._ffmpeg_transcode,
             data=chunk.data,
             in_format=chunk.format,
             in_rate=chunk.sample_rate_hz,

@@ -39,7 +39,7 @@ The frontend talks to the backend via the `VITE_TTS_API_BASE_URL` environment va
 From `backend/`:
 
 ```bash
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
+uv run python -m uvicorn app.main:create_app --factory --reload --port 8080
 ```
 
 Key endpoints:

@@ -52,12 +52,19 @@ body {
 .form-field select,
 .form-field textarea {
   width: 100%;
+  box-sizing: border-box;
   padding: 0.5rem 0.6rem;
   border-radius: 4px;
   border: 1px solid #4b5563;
   font-size: 0.95rem;
   background-color: #020617;
   color: #e5e7eb;
+}
+
+.form-field select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
 }
 
 .form-field textarea {

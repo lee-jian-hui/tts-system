@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend sources
-COPY . /app
+# Copy just dependency metadata first so dependency installs can be cached
+COPY pyproject.toml uv.lock* ./
 
 # Install Python dependencies using uv (reads pyproject.toml / uv.lock)
 # Increase HTTP timeout to make large wheels (e.g. torch) more robust to slow
@@ -19,6 +19,9 @@ COPY . /app
 ENV UV_HTTP_TIMEOUT=300
 RUN pip install --no-cache-dir uv && \
     uv pip install --system --no-cache-dir .
+
+# Now copy the rest of the backend source code
+COPY . /app
 
 # Pre-download the Coqui TTS model into the image so containers do not need
 # network access at runtime. This uses the configured COQUI_MODEL_NAME.

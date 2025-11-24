@@ -196,7 +196,12 @@ function App() {
       }
       const { session_id, ws_url } = (await resp.json()) as SessionResponse
       setStatus(`Session ${session_id} created. Connecting WebSocket...`)
-      await streamAudio(ws_url, payload.target_format, payload.sample_rate_hz)
+      await streamAudio(
+        session_id,
+        ws_url,
+        payload.target_format,
+        payload.sample_rate_hz,
+      )
     } catch (err) {
       console.error('Error creating session or streaming:', err)
       const message =
@@ -207,6 +212,7 @@ function App() {
   }
 
   const streamAudio = async (
+    sessionId: string,
     wsUrl: string,
     format: TargetFormat,
     streamSampleRate: number,
@@ -299,32 +305,35 @@ function App() {
               : 'Stream complete (no audio played).',
           )
         } else {
-          setStatus('Stream complete. Building audio blob...')
+          setStatus('Stream complete. Fetching audio file...')
         }
         ws.close()
         setIsStreaming(false)
         if (format !== 'pcm16') {
-          const mime =
-            format === 'mp3'
-              ? 'audio/mpeg'
-              : format === 'wav'
-              ? 'audio/wav'
-              : 'audio/raw'
-          const blob = new Blob(chunksArr, { type: mime })
-          const url = URL.createObjectURL(blob)
-          setAudioUrl(url)
+          fetchSessionFile(sessionId, format)
+            .then((blob) => {
+              const url = URL.createObjectURL(blob)
+              setAudioUrl(url)
 
-          const audioEl = document.getElementById('audio-player') as
-            | HTMLAudioElement
-            | null
-          if (audioEl) {
-            audioEl
-              .play()
-              .then(() => setStatus('Playing.'))
-              .catch(() => setStatus('Ready (click play).'))
-          } else {
-            setStatus('Ready (audio element not found).')
-          }
+              const audioEl = document.getElementById('audio-player') as
+                | HTMLAudioElement
+                | null
+              if (audioEl) {
+                audioEl
+                  .play()
+                  .then(() => setStatus('Playing.'))
+                  .catch(() => setStatus('Ready (click play).'))
+              } else {
+                setStatus('Ready (audio element not found).')
+              }
+            })
+            .catch((err) => {
+              console.error('Failed to fetch session file:', err)
+              setLastError(
+                err instanceof Error ? err.message : String(err),
+              )
+              setStatus('Failed to fetch audio file.')
+            })
         }
       } else if (msg.type === 'error') {
         console.error('Received stream error from server:', msg)
@@ -395,6 +404,22 @@ function App() {
       <PlayerSection targetFormat={targetFormat} audioUrl={audioUrl} />
     </div>
   )
+}
+
+async function fetchSessionFile(
+  sessionId: string,
+  format: TargetFormat,
+): Promise<Blob> {
+  const resp = await fetch(
+    `${BASE_URL}/v1/tts/sessions/${encodeURIComponent(
+      sessionId,
+    )}/file?format=${encodeURIComponent(format)}`,
+  )
+  if (!resp.ok) {
+    const text = await resp.text()
+    throw new Error(`Failed to fetch session file: HTTP ${resp.status} ${text}`)
+  }
+  return resp.blob()
 }
 
 function base64ToBytes(b64: string): Uint8Array {
