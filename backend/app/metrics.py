@@ -44,6 +44,19 @@ TTS_BACKEND_DROPPED_FRAMES_TOTAL = Counter(
     ["provider", "format", "reason"],
 )
 
+TTS_RATE_LIMIT_HITS_TOTAL = Counter(
+    "tts_rate_limit_hits_total",
+    "Total number of HTTP requests rejected by the rate limiter.",
+    ["scope"],
+)
+
+TTS_RATE_LIMIT_MAX_BUCKET_USAGE = Gauge(
+    "tts_rate_limit_max_bucket_usage",
+    "Maximum per-key request count as a fraction of the configured limit "
+    "across all keys currently tracked by the rate limiter.",
+    ["scope"],
+)
+
 
 def record_session_created(provider_id: str) -> None:
     TTS_SESSIONS_TOTAL.labels(provider=provider_id, status="created").inc()
@@ -87,3 +100,17 @@ def record_stream_chunk_dropped(
         format=target_format,
         reason=reason,
     ).inc()
+
+
+def record_rate_limit_hit(scope: str) -> None:
+    """Record that a request was rejected by the rate limiter."""
+    TTS_RATE_LIMIT_HITS_TOTAL.labels(scope=scope).inc()
+
+
+def record_rate_limit_max_bucket_usage(scope: str, usage_fraction: float) -> None:
+    """Record the current maximum bucket usage across all keys for a limiter.
+
+    `usage_fraction` should be in the range [0, 1], representing the ratio of
+    the most heavily used key's count to the configured max_requests_per_window.
+    """
+    TTS_RATE_LIMIT_MAX_BUCKET_USAGE.labels(scope=scope).set(usage_fraction)

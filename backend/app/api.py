@@ -201,6 +201,7 @@ async def _normalize_tts_request(
 
 
 @router.get("/metrics")
+
 async def metrics() -> PlainTextResponse:
     payload = generate_latest()
     return PlainTextResponse(payload, media_type=CONTENT_TYPE_LATEST)

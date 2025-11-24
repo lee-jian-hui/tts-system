@@ -6,6 +6,7 @@ from threading import RLock
 from typing import Dict, Tuple
 
 from app.logging_utils import get_logger
+from app import metrics as app_metrics
 
 
 logger = get_logger(__name__)
@@ -50,10 +51,26 @@ class RateLimiter:
                     window_start,
                 )
                 self._buckets[key] = (window_start, count)
+                app_metrics.record_rate_limit_hit(scope="ip")
+                # Update gauge with current maximum bucket usage across all keys.
+                try:
+                    max_count = max(c for _, c in self._buckets.values())
+                except ValueError:
+                    max_count = 0
+                if self._config.max_requests_per_window > 0:
+                    usage = max_count / float(self._config.max_requests_per_window)
+                    app_metrics.record_rate_limit_max_bucket_usage(scope="ip", usage_fraction=usage)
                 return False
 
             # Record the successful request.
             count += 1
             self._buckets[key] = (window_start, count)
+            # Update gauge with current maximum bucket usage across all keys.
+            try:
+                max_count = max(c for _, c in self._buckets.values())
+            except ValueError:
+                max_count = 0
+            if self._config.max_requests_per_window > 0:
+                usage = max_count / float(self._config.max_requests_per_window)
+                app_metrics.record_rate_limit_max_bucket_usage(scope="ip", usage_fraction=usage)
             return True
-
