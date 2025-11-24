@@ -137,7 +137,7 @@ class TTSService:
                 while True:
                     try:
                         chunk: AudioChunk = await asyncio.wait_for(
-                            stream.__anext__(),
+                            anext(stream),  # instead of stream.__anext__()
                             timeout=self._provider_timeout_seconds,
                         )
                     except StopAsyncIteration:

@@ -20,11 +20,11 @@ ENV UV_HTTP_TIMEOUT=300
 RUN pip install --no-cache-dir uv && \
     uv pip install --system --no-cache-dir .
 
-# Now copy the rest of the backend source code
-COPY . /app
-
 # Pre-download the Coqui TTS model into the image so containers do not need
-# network access at runtime. This uses the configured COQUI_MODEL_NAME.
+# network access at runtime. To avoid depending on the full project source,
+# copy only the minimal app config needed for this step.
+RUN mkdir -p app
+COPY app/__init__.py app/config.py /app/app/
 RUN python - << 'EOF'
 from app.config import settings
 from TTS.api import TTS
@@ -33,6 +33,9 @@ if settings.coqui_enabled:
     # Instantiate once to trigger model download into the default cache.
     TTS(model_name=settings.coqui_model_name, progress_bar=False, gpu=False)
 EOF
+
+# Now copy the rest of the backend source code
+COPY . /app
 
 EXPOSE 8080
 

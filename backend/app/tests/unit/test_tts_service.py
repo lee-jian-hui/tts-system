@@ -328,4 +328,3 @@ def test_rate_limiter_resets_after_window(monkeypatch: pytest.MonkeyPatch) -> No
 
     fake_time[0] += 11
     assert limiter.allow_request(key) is True
-

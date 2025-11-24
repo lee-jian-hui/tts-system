@@ -217,13 +217,10 @@ __marimo__/
 
 
 
-# 
-*.md
-
-!ARCH.md
-!README.md
-!REQS.md
+# others
 *.pdf
-
-
 .vscode/
+ignore/
+
+# whitelist
+
