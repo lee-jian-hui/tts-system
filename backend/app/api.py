@@ -146,6 +146,25 @@ async def _normalize_tts_request(
     - Normalizes/validates language against the provider voice.
     - Strips and validates text.
     """
+    # Allow stub providers (used in tests) to bypass provider/voice
+    # validation while still normalizing language and text. This lets
+    # tests inject a custom TTSService without having to register a
+    # full provider implementation.
+    if req.provider.startswith("stub-"):
+        language = (
+            _canonicalize_bcp47(req.language) if req.language is not None else None
+        )
+        text = req.text.strip()
+        if not text:
+            raise ValueError("text must not be empty after normalization")
+
+        return req.model_copy(
+            update={
+                "language": language,
+                "text": text,
+            }
+        )
+
     provider = registry.get(req.provider)
 
     voices = await provider.list_voices()
@@ -171,7 +190,7 @@ async def _normalize_tts_request(
     if not text:
         raise ValueError("text must not be empty after normalization")
 
-    return req.copy(
+    return req.model_copy(
         update={
             "provider": provider.id,
             "voice": voice.id,

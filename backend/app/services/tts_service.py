@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import AsyncIterator
 from uuid import uuid4
+from builtins import anext
 
 from app.models import (
     CreateTTSSessionRequest,
@@ -82,11 +83,21 @@ class TTSService:
                 voice_id=session.voice,
                 language=session.language,
             ):
-                encoded = await self._transcode.transcode_chunk(
-                    chunk,
-                    target_format=session.target_format,
-                    sample_rate_hz=session.sample_rate_hz,
-                )
+                try:
+                    encoded = await self._transcode.transcode_chunk(
+                        chunk,
+                        target_format=session.target_format,
+                        sample_rate_hz=session.sample_rate_hz,
+                    )
+                except ValueError:
+                    # Treat per-chunk transcoding failures as skippable: drop this
+                    # chunk, record a metric, and continue with subsequent audio.
+                    app_metrics.record_stream_chunk_dropped(
+                        provider_id,
+                        session.target_format,
+                        reason="transcode_error",
+                    )
+                    continue
                 app_metrics.record_stream_chunk(
                     provider_id, session.target_format, len(encoded)
                 )

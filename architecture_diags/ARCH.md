@@ -28,6 +28,7 @@ For protocol-level flows and core logic diagrams, see:
 
 - `Frontend (React/Vite)`
   - Renders the UI, collects text + provider/voice/format options.
+  - calls backend REST server
   - Calls `POST /v1/tts/sessions`, `GET /v1/voices`, then opens `WS /v1/tts/stream/{session_id}`.
 
 - `TTS Gateway (FastAPI)`
@@ -67,9 +68,7 @@ captured in:
 - `diagrams/streaming.md`
 
 
-# System Overview – End-to-End Topology
-
-
+# High Level Architecture 
 
 ```mermaid
 flowchart TD

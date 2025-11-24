@@ -40,8 +40,7 @@ This layout keeps the gateway logic concentrated in a small number of services, 
 
 ### 3.1 Streaming Strategy
 
-I made streaming a first-class concern end to end:
-
+**I made streaming the most important concern when designining the whole system**
 - Providers expose `async def stream_synthesize(...) -> AsyncIterator[AudioChunk]`, yielding small PCM16 chunks.
 - `TTSService.stream_session_audio` is an async generator that:
   - Pulls chunks from the provider stream (with per-chunk timeouts and retry logic),
@@ -49,7 +48,16 @@ I made streaming a first-class concern end to end:
   - Yields encoded bytes to the WebSocket handler as soon as they’re ready.
 - The WebSocket handler pushes each encoded chunk to the client as a separate JSON-wrapped message.
 
-For Coqui, I chose a pragmatic approach: synthesize the entire utterance to a temporary WAV file and then stream PCM frames from it. This is not as “purely streaming” as generating audio frame-by-frame from the model, but it simplifies integration and uses a well-understood file format as the boundary.
+For Coqui, we currently use a pragmatic, file‑based streaming approach:
+
+- Instead of generating audio incrementally frame‑by‑frame from the model, we first synthesize the entire utterance into a temporary WAV file. We then stream raw PCM frames from this file to the client, as if they were being produced live. 
+
+- This introduces a small amount of upfront latency (we wait for the utterance to finish synthesizing), and it is not “true” model‑level streaming, but it significantly simplifies the integration.
+
+- By working with a standard WAV file, we can rely on well‑understood file and PCM operations for buffering, backpressure, reconnection, and format handling, rather than implementing custom Coqui‑specific streaming logic. This makes the system easier to reason about, test, and debug at this stage.
+
+The design is intentionally incremental: as we need lower latency, support for very long utterances, or tighter resource constraints, this WAV‑based pipeline can be evolved into a more production‑grade solution that pulls smaller chunks directly from the model. Because the external streaming contract is already based on PCM frames, we can improve the internals over time without forcing changes on downstream consumers.
+
 
 ### 3.2 Chunk Ordering & Protocol
 
@@ -95,7 +103,7 @@ This was a conscious tradeoff between completeness and implementation effort; in
 
 ### 3.5 Transcoding (ffmpeg) and Concurrency
 
-For audio conversion, I chose to rely on ffmpeg CLI:
+For audio conversion, I chose to rely on ffmpeg with python bindings:
 
 - It is widely available, stable, and supports all required formats and resampling.
 - Encapsulating ffmpeg calls in `AudioTranscodeService` means other parts of the code never touch format-specific details, and all interaction with the `ffmpeg` process is centralized (build args, feed bytes on stdin, read bytes on stdout, handle errors).
@@ -117,6 +125,16 @@ Several aspects of the design aim at making it easy to extend:
 
 These choices are intended to keep the codebase flexible if it were to grow into a multi-provider, production-grade gateway.
 
+
+### 3.7 Approach to Testing
+
+I relied primarily on automated tests at three levels:
+
+- **Unit tests** for `TTSService`, `AudioTranscodeService`, and rate limiting, using `pytest`/`pytest-asyncio` to cover control flow, error handling, and edge cases.
+- **Integration tests** that exercise the FastAPI app via `TestClient`, covering HTTP endpoints, WebSocket streaming (including `seq` ordering), and metrics/logging middleware.
+- **End-to-end tests** that create sessions and stream audio through the public API for both the mock tone provider and (when available) Coqui, ensuring the main user flows behave correctly.
+
+
 ## 4. Lessons Learned
 
 Building this project surfaced a few useful lessons:
@@ -131,10 +149,14 @@ Building this project surfaced a few useful lessons:
   Investing in sequence numbers, Prometheus metrics, and basic logging early made it much easier to verify behavior, especially around retries, circuit breaking, and dropped frames.
 
 - **Balancing completeness with pragmatism is key**  
-  I deliberately left some areas (language validation, persistent storage, advanced backpressure) at a “good enough for the assignment” level. Being explicit about those tradeoffs, in code and in docs, helps keep the design honest and future changes straightforward.
+  I deliberately left some areas (language validation, persistent storage, advanced backpressure) at a “good enough for the assignment” level.
 
 - **Frontend and backend streaming must be co-designed**  
   The decision to treat PCM16 as a live stream and `wav`/`mp3` as file-oriented formats meant the frontend needed two different playback paths. This reinforced that streaming design isn’t just a backend concern; client capabilities and UX matter too.
+
+- **Backpressure handling**
+  Handling backpressure is inherently tricky because it sits at the intersection of networking, buffering, and user experience. There are many possible strategies (implicit socket backpressure, bounded queues, adaptive throttling, dropping policies, pause/resume protocols, etc.), but choosing and tuning among them only really makes sense once the overall architecture and requirements are clear: target latencies, max utterance lengths, concurrency, failure behavior, and resource limits. For now, a simple, conservative approach is acceptable; as we evolve this into a more production‑grade system, we can introduce explicit queues, clearer flow‑control contracts between components, and more robust policies for what to do when a client or downstream system falls behind.
+
 
 ## 5. Tradeoffs & Future Improvements
 
@@ -149,10 +171,16 @@ If this project were to evolve into a production gateway, there are several clea
 - **Richer transcoding and TTS infrastructure**  
   Consider long-lived ffmpeg pipelines, a separate transcoding service, or GPU-accelerated providers for higher throughput and lower latency, especially for large or concurrent workloads.
 
-- **Security and governance**  
+- **Auth, Security and governance**  
   Add authentication and authorization, more sophisticated rate limiting (per token or user), and better multi-tenant isolation if used as a shared gateway.
 
 - **Bonus features from the assignment**  
   Explore SSML support, word/phoneme timing markers, and caching/deduplication to reduce repeated work and improve responsiveness.
 
-Overall, the current implementation meets the assignment’s requirements and establishes a foundation that can be incrementally hardened and extended if the project needs to grow beyond a local demo. 
+- **Extending to include more providers**
+  this might require some refactors surrounding implement a clean system to register what providers we support, etc. and expose that to the frontend as well
+
+  however the design currently still enables one to easily extend to add a new provider in the backend
+  
+
+Overall, the current implementation meets the assignment’s requirements while keeping in mind the extensibility required to evolve beyond a simple local demo

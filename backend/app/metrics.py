@@ -38,6 +38,12 @@ TTS_PROVIDER_FAILURES_TOTAL = Counter(
     ["provider"],
 )
 
+TTS_BACKEND_DROPPED_FRAMES_TOTAL = Counter(
+    "tts_backend_dropped_frames_total",
+    "Total number of audio chunks dropped by the backend per provider/format/reason.",
+    ["provider", "format", "reason"],
+)
+
 
 def record_session_created(provider_id: str) -> None:
     TTS_SESSIONS_TOTAL.labels(provider=provider_id, status="created").inc()
@@ -69,3 +75,15 @@ def record_stream_chunk(provider_id: str, target_format: str, num_bytes: int) ->
 def record_provider_failure(provider_id: str) -> None:
     TTS_PROVIDER_FAILURES_TOTAL.labels(provider=provider_id).inc()
 
+
+def record_stream_chunk_dropped(
+    provider_id: str,
+    target_format: str,
+    *,
+    reason: str,
+) -> None:
+    TTS_BACKEND_DROPPED_FRAMES_TOTAL.labels(
+        provider=provider_id,
+        format=target_format,
+        reason=reason,
+    ).inc()
