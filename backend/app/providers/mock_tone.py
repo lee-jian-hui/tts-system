@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import AsyncIterator
 
 from .base import AudioChunk, BaseTTSProvider, ProviderVoice
+from app.models.audio_format import AudioFormat
 from ..audio import pcm16le_from_floats, tone, silence
 
 
@@ -24,7 +25,7 @@ class MockToneProvider(BaseTTSProvider):
                 name="Mock Tone Voice",
                 language="en-US",
                 sample_rate_hz=self._sample_rate_hz,
-                base_format="pcm16",
+                base_format=AudioFormat.PCM16,
             )
         ]
 
@@ -76,6 +77,5 @@ class MockToneProvider(BaseTTSProvider):
                 data=chunk,
                 sample_rate_hz=sample_rate,
                 num_channels=1,
-                format="pcm16",
+                format=AudioFormat.PCM16,
             )
-

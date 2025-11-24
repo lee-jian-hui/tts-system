@@ -8,17 +8,25 @@ from typing import Any, Dict
 import pytest
 
 from app.providers import AudioChunk
+from app.models.audio_format import AudioFormat
 from app.services import AudioTranscodeService
 
 
 @pytest.mark.asyncio
 async def test_transcode_pass_through_when_format_and_rate_match() -> None:
     data = b"\x01\x02\x03\x04"
-    chunk = AudioChunk(data=data, sample_rate_hz=16000, num_channels=1, format="pcm16")
+    chunk = AudioChunk(
+        data=data,
+        sample_rate_hz=16000,
+        num_channels=1,
+        format=AudioFormat.PCM16,
+    )
     service = AudioTranscodeService()
 
     out = await service.transcode_chunk(
-        chunk, target_format="pcm16", sample_rate_hz=16000  # type: ignore[arg-type]
+        chunk,
+        target_format=AudioFormat.PCM16,
+        sample_rate_hz=16000,
     )
 
     assert out == data
@@ -32,7 +40,7 @@ async def test_transcode_uses_ffmpeg_when_rate_differs(
         data=b"\x00" * 160,
         sample_rate_hz=8000,
         num_channels=1,
-        format="pcm16",
+        format=AudioFormat.PCM16,
     )
     service = AudioTranscodeService()
 
@@ -50,13 +58,15 @@ async def test_transcode_uses_ffmpeg_when_rate_differs(
     )
 
     out = await service.transcode_chunk(
-        chunk, target_format="pcm16", sample_rate_hz=16000  # type: ignore[arg-type]
+        chunk,
+        target_format=AudioFormat.PCM16,
+        sample_rate_hz=16000,
     )
 
     assert out == b"resampled"
     assert called["data"] == chunk.data
-    assert called["in_format"] == "pcm16"
-    assert called["out_format"] == "pcm16"
+    assert called["in_format"] == AudioFormat.PCM16
+    assert called["out_format"] == AudioFormat.PCM16
     assert called["in_rate"] == 8000
     assert called["out_rate"] == 16000
     assert called["in_channels"] == 1
@@ -66,14 +76,17 @@ async def test_transcode_uses_ffmpeg_when_rate_differs(
 async def test_transcode_rejects_unsupported_input_format() -> None:
     data = b"\x01\x02"
     chunk = AudioChunk(  # type: ignore[arg-type]
-        data=data, sample_rate_hz=16000, num_channels=1, format="unknown"
+        data=data,
+        sample_rate_hz=16000,
+        num_channels=1,
+        format="unknown",  # type: ignore[arg-type]
     )
     service = AudioTranscodeService()
 
     with pytest.raises(ValueError) as exc_info:
         await service.transcode_chunk(
             chunk,
-            target_format="pcm16",  # type: ignore[arg-type]
+            target_format=AudioFormat.PCM16,
             sample_rate_hz=16000,
         )
 
@@ -83,7 +96,12 @@ async def test_transcode_rejects_unsupported_input_format() -> None:
 @pytest.mark.asyncio
 async def test_transcode_rejects_unsupported_output_format() -> None:
     data = b"\x01\x02"
-    chunk = AudioChunk(data=data, sample_rate_hz=16000, num_channels=1, format="pcm16")
+    chunk = AudioChunk(
+        data=data,
+        sample_rate_hz=16000,
+        num_channels=1,
+        format=AudioFormat.PCM16,
+    )
     service = AudioTranscodeService()
 
     with pytest.raises(ValueError) as exc_info:
@@ -103,13 +121,13 @@ async def test_transcode_to_wav_produces_valid_wav_header() -> None:
         data=pcm_data,
         sample_rate_hz=16000,
         num_channels=1,
-        format="pcm16",
+        format=AudioFormat.PCM16,
     )
     service = AudioTranscodeService()
 
     wav_bytes = await service.transcode_chunk(
         chunk,
-        target_format="wav",  # type: ignore[arg-type]
+        target_format=AudioFormat.WAV,
         sample_rate_hz=16000,
     )
 
@@ -130,13 +148,13 @@ async def test_transcode_to_mp3_produces_decodable_audio() -> None:
         data=pcm_data,
         sample_rate_hz=16000,
         num_channels=1,
-        format="pcm16",
+        format=AudioFormat.PCM16,
     )
     service = AudioTranscodeService()
 
     mp3_bytes = await service.transcode_chunk(
         chunk,
-        target_format="mp3",  # type: ignore[arg-type]
+        target_format=AudioFormat.MP3,
         sample_rate_hz=16000,
     )
 
@@ -169,4 +187,3 @@ async def test_transcode_to_mp3_produces_decodable_audio() -> None:
 
     assert proc.returncode == 0, proc.stderr.decode("utf-8", errors="ignore")
     assert proc.stdout
-

@@ -47,6 +47,7 @@ Key endpoints:
 - `GET /healthz` – health check.
 - `GET /v1/voices` – list available voices across providers.
 - `POST /v1/tts/sessions` – create a TTS streaming session:
+- `GET /v1/tts/sessions/{session_id}/file?format=wav|mp3|pcm16` – fetch a full audio file for a completed session (used by the frontend for WAV/MP3 playback).
 
   ```json
   {
@@ -75,6 +76,8 @@ WebSocket streaming:
 - Connect to `/v1/tts/stream/{session_id}` to receive:
   - `{"type":"audio","seq":1,"data":"<base64 audio>"}` frames, and
   - A final `{"type":"eos"}` message.
+- For `pcm16` target format, the frontend plays chunks live via the Web Audio API as they arrive.
+- For `wav`/`mp3`, the frontend still consumes the stream for metrics, but playback happens via a single file fetched from `/v1/tts/sessions/{session_id}/file`.
 
 ### Frontend
 
@@ -112,12 +115,53 @@ Frontend:
 
 ## Adding a new provider
 
-At a high level:
+To add another TTS provider (e.g. a cloud API):
 
-1. Implement `BaseTTSProvider` in `backend/app/providers/`:
-   - Provide `id`, `list_voices`, and `stream_synthesize(...) -> AsyncIterator[AudioChunk]`.
-2. Register it in `ProviderRegistry` (`backend/app/providers/registry.py`).
-3. Optionally add a feature flag to `AppConfig` (`backend/app/config.py`) and environment variables.
-4. Update docs and tests as needed.
+1. **Implement the provider class**
+   - Create a new file in `backend/app/providers/` (for example, `my_provider.py`).
+   - Implement a class that follows the `BaseTTSProvider` contract:
+     - `id: str` – a stable identifier (e.g. `"my_provider"`).
+     - `async def list_voices(self) -> list[ProviderVoice]` – return voices with `id`, `name`, `language`, `sample_rate_hz`, and `base_format` (typically `"pcm16"`).
+     - `async def stream_synthesize(self, *, text: str, voice_id: str, language: str | None = None) -> AsyncIterator[AudioChunk]` – yield small `AudioChunk` PCM chunks for the request.
 
+2. **Wire it into the registry**
+   - Update `backend/app/providers/registry.py` to instantiate your provider and include it in:
+     - `list_providers()`,
+     - Provider lookup by `id`.
+   - Optionally, guard it with a feature flag (env var) if it requires credentials or heavy dependencies.
+
+3. **Expose configuration**
+   - Add any provider-specific config to `backend/app/config.py` (e.g. API keys, base URLs, default language).
+   - Document the relevant environment variables in this README.
+
+4. **Update tests**
+   - Add unit tests that exercise `list_voices` and `stream_synthesize` for the new provider.
+   - Optionally extend integration/e2e tests to cover a simple end-to-end flow with the provider enabled.
+
+5. **Frontend behavior**
+   - The frontend discovers providers/voices via `GET /v1/voices`, so as long as your provider returns voices, it should appear automatically in the dropdown.
+
+## Tradeoffs and Known Issues
+
+- **Streaming vs. file playback**
+  - `pcm16` is streamed end-to-end and played live in the browser via Web Audio.
+  - `wav` and `mp3` are streamed for observability (seq, bytes, latency), but the actual user playback uses a second request to `/v1/tts/sessions/{session_id}/file` to obtain a single valid audio file.
+
+- **Backpressure model**
+  - Backpressure is handled implicitly by sequential `await websocket.send_json(...)` calls per session.
+  - This is simple and correct, but a slow client or network directly slows provider consumption and transcoding for that session. A production system might add an explicit bounded queue between encoding and the WebSocket.
+
+- **Blocking ffmpeg calls**
+  - ffmpeg runs as an external process; the Python call that waits for it (`subprocess.run`) is blocking.
+  - To avoid blocking the event loop, transcoding is offloaded to a worker thread, which is sufficient for this assignment but could be evolved into a dedicated transcoding pool or service for higher loads.
+
+- **Provider behavior and latency**
+  - `CoquiTTSProvider` synthesizes the full utterance to a temporary WAV and then streams it, which adds an initial latency spike before the first chunk. This simplifies integration with Coqui at the cost of some startup time.
+
+- **Language and voice validation**
+  - Requests carry `voice` and optional `language`, but the gateway currently does only light validation: it assumes the combination is meaningful for the provider.
+  - The mock provider ignores `language`; Coqui uses a configured default and may accept a per-utterance language. A production gateway would likely enforce that voices belong to providers and that languages are supported.
+
+- **In-memory storage**
+  - Sessions are stored in memory, which is fine for local demos but does not survive restarts or support horizontal scaling in terms of a multi-instance, multi-cluster setting. A real deployment would replace this with persistent storage (e.g. Redis or a database).
 

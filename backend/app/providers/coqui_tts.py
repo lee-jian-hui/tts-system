@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import AsyncIterator
 
 from .base import AudioChunk, BaseTTSProvider, ProviderVoice
+from app.models.audio_format import AudioFormat
 from app.config import settings
 from TTS.api import TTS as CoquiTTS  # type: ignore[import]
 
@@ -65,7 +66,7 @@ class CoquiTTSProvider(BaseTTSProvider):
                 name=f"Coqui {self._model_name}",
                 language=self._language,
                 sample_rate_hz=self._sample_rate_hz,
-                base_format="pcm16",
+                base_format=AudioFormat.PCM16,
             )
         ]
 
@@ -119,5 +120,5 @@ class CoquiTTSProvider(BaseTTSProvider):
                         data=frames,
                         sample_rate_hz=sample_rate,
                         num_channels=num_channels,
-                        format="pcm16",
+                        format=AudioFormat.PCM16,
                     )

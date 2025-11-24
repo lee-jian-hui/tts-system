@@ -42,7 +42,7 @@ class VoiceRepository:
 
     def _default_formats(self) -> list[AudioFormat]:
         # For MVP, assume providers can at least output pcm16 and wav
-        return ["pcm16", "wav"]  # type: ignore[list-item]
+        return [AudioFormat.PCM16, AudioFormat.WAV]
 
     def _find_provider_id_for_voice(self, voice_id: str) -> str:
         # For minimal implementation there is a single provider,

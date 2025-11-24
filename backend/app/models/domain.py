@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from .api import AudioFormat
+from .audio_format import AudioFormat
 
 
 class SessionStatus(Enum):
@@ -52,4 +52,3 @@ class TTSSession:
             created_at=datetime.now(timezone.utc),
             status=SessionStatus.PENDING,
         )
-

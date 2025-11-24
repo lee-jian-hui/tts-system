@@ -24,6 +24,7 @@ from app.models import (
     ErrorMessage,
     Voice,
 )
+from app.models.audio_format import AudioFormat
 from app.logging_utils import get_logger
 from app.container import (
     get_provider_registry,
@@ -32,7 +33,7 @@ from app.container import (
     get_session_repo,
     get_transcode_service,
 )
-from app.providers import AudioChunk as ProviderAudioChunk
+from app.providers import AudioChunk 
 
 
 logger = get_logger(__name__)
@@ -71,7 +72,11 @@ async def list_voices(
                     language=v.language,
                     provider=p.id,
                     sample_rate_hz=v.sample_rate_hz,
-                    supported_formats=["pcm16", "wav", "mp3"],
+                    supported_formats=[
+                        AudioFormat.PCM16,
+                        AudioFormat.WAV,
+                        AudioFormat.MP3,
+                    ],
                 )
             )
     return VoicesResponse(voices=items)
@@ -245,7 +250,7 @@ async def get_session_file(
     if not session:
         raise HTTPException(status_code=404, detail=f"Unknown session '{session_id}'")
 
-    target_format = format or session.target_format
+    target_format = AudioFormat(format) if format else session.target_format
 
     registry = get_provider_registry()
     provider = registry.get(session.provider)
@@ -267,11 +272,11 @@ async def get_session_file(
     if sample_rate is None:
         raise HTTPException(status_code=500, detail="Provider produced no audio data")
 
-    full_chunk = ProviderAudioChunk(
+    full_chunk = AudioChunk(
         data=bytes(pcm_buf),
         sample_rate_hz=sample_rate,
         num_channels=num_channels,
-        format="pcm16",
+        format=AudioFormat.PCM16,
     )
 
     encoded = await get_transcode_service().transcode_chunk(
@@ -280,9 +285,9 @@ async def get_session_file(
         sample_rate_hz=session.sample_rate_hz,
     )
 
-    if target_format == "mp3":
+    if target_format is AudioFormat.MP3:
         media_type = "audio/mpeg"
-    elif target_format == "wav":
+    elif target_format is AudioFormat.WAV:
         media_type = "audio/wav"
     else:
         media_type = "application/octet-stream"

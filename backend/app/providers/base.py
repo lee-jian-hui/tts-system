@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import AsyncIterator, Literal, Protocol
+from typing import AsyncIterator, Protocol
 
-
-AudioFormat = Literal["pcm16", "mulaw", "opus", "mp3", "wav"]
+from app.models.audio_format import AudioFormat
 
 
 @dataclass
@@ -15,7 +14,7 @@ class ProviderVoice:
     name: str
     language: str
     sample_rate_hz: int
-    base_format: AudioFormat = "pcm16"
+    base_format: AudioFormat = AudioFormat.PCM16
 
 
 @dataclass
@@ -29,7 +28,7 @@ class AudioChunk:
     data: bytes
     sample_rate_hz: int
     num_channels: int = 1
-    format: AudioFormat = "pcm16"
+    format: AudioFormat = AudioFormat.PCM16
 
 
 class BaseTTSProvider(Protocol):
@@ -48,4 +47,3 @@ class BaseTTSProvider(Protocol):
         language: str | None = None,
     ) -> AsyncIterator[AudioChunk]:
         """Stream audio chunks for the given synthesis request."""
-

@@ -5,7 +5,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-AudioFormat = Literal["pcm16", "mulaw", "opus", "mp3", "wav"]
+from .audio_format import AudioFormat
 
 
 class CreateTTSSessionRequest(BaseModel):

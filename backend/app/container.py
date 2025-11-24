@@ -6,7 +6,7 @@ from app.providers import ProviderRegistry
 from app.repositories import InMemoryTTSSessionRepository
 from app.services import TTSService, AudioTranscodeService
 from app.services.circuit_breaker import CircuitBreakerRegistry
-from app.services.rate_limiter import RateLimiter
+from app.services.rate_limiter import RateLimiter, RateLimitConfig
 
 
 @lru_cache(maxsize=1)
@@ -31,7 +31,10 @@ def get_circuit_breaker_registry() -> CircuitBreakerRegistry:
 
 @lru_cache(maxsize=1)
 def get_rate_limiter() -> RateLimiter:
-    return RateLimiter()
+    # Use a generous default so normal usage and tests
+    # do not trip the rate limiter too easily.
+    config = RateLimitConfig(max_requests_per_window=50, window_seconds=60)
+    return RateLimiter(config=config)
 
 
 @lru_cache(maxsize=1)
