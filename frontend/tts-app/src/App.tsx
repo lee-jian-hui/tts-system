@@ -3,6 +3,7 @@ import './App.css'
 import { TtsForm } from './components/TtsForm'
 import { StatusPanel } from './components/StatusPanel'
 import { PlayerSection } from './components/PlayerSection'
+import { StressForm } from './components/StressForm'
 import type { TargetFormat, VoiceInfo } from './types'
 
 const BASE_URL =
@@ -48,9 +49,16 @@ function App() {
   const [voicesLoading, setVoicesLoading] = useState(false)
   const [voicesError, setVoicesError] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isStressRunning, setIsStressRunning] = useState(false)
+  const [stressSessions, setStressSessions] = useState(20)
+  const [stressConcurrency, setStressConcurrency] = useState(5)
+  const [stressTotal, setStressTotal] = useState(0)
+  const [stressCompleted, setStressCompleted] = useState(0)
+  const [stressFailed, setStressFailed] = useState(0)
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [droppedFrames, setDroppedFrames] = useState(0)
   const [limitLiveBuffer, setLimitLiveBuffer] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   // Web Audio state for live PCM16 streaming
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -59,6 +67,13 @@ function App() {
   const sessionStartRef = useRef<number | null>(null)
   const lastSeqRef = useRef<number | null>(null)
   const firstChunkSeenRef = useRef<boolean>(false)
+  const isBusy = isStreaming || isStressRunning
+
+  useEffect(() => {
+    if (!isBusy) {
+      setToast(null)
+    }
+  }, [isBusy])
 
   const enqueuePcmChunk = (pcmBytes: Uint8Array, streamSampleRate: number) => {
     const ctx = audioCtxRef.current
@@ -147,6 +162,11 @@ function App() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
 
+    if (isBusy) {
+      return
+    }
+
+    setToast('Starting session...')
     setStatus('Creating session...')
     setLastError(null)
     setBytes(0)
@@ -208,6 +228,96 @@ function App() {
         err instanceof Error ? `${err.name}: ${err.message}` : String(err)
       setLastError(message)
       setStatus('Error while creating session or streaming. See error details below.')
+    }
+  }
+
+  const handleStressSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+
+    if (isBusy) {
+      return
+    }
+
+    const totalSessions = Math.min(Math.max(stressSessions, 1), 100)
+    const maxConcurrent = Math.min(Math.max(stressConcurrency, 1), 20)
+
+    setToast('Starting stress test...')
+    setStatus('Starting stress test...')
+    setLastError(null)
+    setBytes(0)
+    setChunks(0)
+    setLatencyMs(null)
+    setDroppedFrames(0)
+    setStressTotal(totalSessions)
+    setStressCompleted(0)
+    setStressFailed(0)
+    setIsStressRunning(true)
+
+    const runSingleSession = async () => {
+      const randomText = `LOAD_TEST_${Math.random().toString(36).slice(2, 10)}`
+      const payload = {
+        provider,
+        voice,
+        text: randomText,
+        target_format: targetFormat,
+        sample_rate_hz: sampleRate,
+        language: 'en-US',
+      }
+
+      try {
+        const resp = await fetch(`${BASE_URL}/v1/tts/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!resp.ok) {
+          setStressFailed((n) => n + 1)
+          return
+        }
+        const { session_id, ws_url } = (await resp.json()) as SessionResponse
+        await streamStressSession(
+          session_id,
+          ws_url,
+          payload.target_format,
+          payload.sample_rate_hz,
+        )
+        setStressCompleted((n) => n + 1)
+      } catch (err) {
+        console.error('Stress test session failed:', err)
+        setStressFailed((n) => n + 1)
+      }
+    }
+
+    let started = 0
+    let active = 0
+
+    const maybeFinish = () => {
+      if (started >= totalSessions && active === 0) {
+        setIsStressRunning(false)
+        setStatus('Stress test finished.')
+      }
+    }
+
+    const startNext = () => {
+      if (started >= totalSessions) {
+        maybeFinish()
+        return
+      }
+      started += 1
+      active += 1
+      runSingleSession()
+        .catch(() => {
+          // errors are already counted inside runSingleSession
+        })
+        .finally(() => {
+          active -= 1
+          startNext()
+        })
+    }
+
+    const initial = Math.min(maxConcurrent, totalSessions)
+    for (let i = 0; i < initial; i += 1) {
+      startNext()
     }
   }
 
@@ -368,12 +478,93 @@ function App() {
     }
   }
 
+  const streamStressSession = async (
+    sessionId: string,
+    wsUrl: string,
+    format: TargetFormat,
+    streamSampleRate: number,
+  ): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      let ws: WebSocket
+      try {
+        ws = new WebSocket(wsUrl)
+      } catch (err) {
+        reject(err)
+        return
+      }
+
+      let totalBytes = 0
+      let firstChunkTime: number | null = null
+
+      ws.onopen = () => {
+        console.debug('Stress WebSocket opened:', wsUrl)
+      }
+
+      ws.onmessage = (event: MessageEvent<string>) => {
+        let msg: WsMessage
+        try {
+          msg = JSON.parse(event.data) as WsMessage
+        } catch (err) {
+          console.error('Stress WS parse error:', err, event.data)
+          ws.close()
+          reject(err)
+          return
+        }
+        if (msg.type === 'audio') {
+          const chunkBytes = base64ToBytes(msg.data)
+          totalBytes += chunkBytes.length
+          setBytes((b) => b + chunkBytes.length)
+          setChunks((c) => c + 1)
+          if (firstChunkTime == null) {
+            firstChunkTime = performance.now()
+            if (sessionStartRef.current != null) {
+              setLatencyMs(firstChunkTime - sessionStartRef.current)
+            }
+          }
+          // No playback in stress mode; chunks are discarded.
+        } else if (msg.type === 'eos') {
+          ws.close()
+          resolve()
+        } else if (msg.type === 'error') {
+          console.error('Stress WS error from server:', msg)
+          ws.close()
+          reject(new Error(msg.message))
+        }
+      }
+
+      ws.onerror = (event) => {
+        console.error('Stress WebSocket error', event)
+        ws.close()
+        reject(new Error('WebSocket error during stress test'))
+      }
+
+      ws.onclose = (event: CloseEvent) => {
+        if (!event.wasClean) {
+          reject(
+            new Error(
+              `Stress WebSocket closed uncleanly (code=${event.code}, reason="${event.reason || 'none'}")`,
+            ),
+          )
+        } else {
+          resolve()
+        }
+      }
+    })
+  }
+
   return (
     <div className="app">
       <h1>TTS Gateway Demo</h1>
 
+      {toast && (
+        <div className="toast toast-loading">
+          {toast}
+        </div>
+      )}
+
       <TtsForm
         text={text}
+        isBusy={isBusy}
         provider={provider}
         voice={voice}
         targetFormat={targetFormat}
@@ -383,6 +574,15 @@ function App() {
         onVoiceChange={setVoice}
         onTargetFormatChange={setTargetFormat}
         onSubmit={handleSubmit}
+      />
+
+      <StressForm
+        isBusy={isBusy}
+        sessions={stressSessions}
+        concurrency={stressConcurrency}
+        onSessionsChange={setStressSessions}
+        onConcurrencyChange={setStressConcurrency}
+        onSubmit={handleStressSubmit}
       />
 
       <StatusPanel
@@ -399,6 +599,10 @@ function App() {
         voicesError={voicesError}
         lastError={lastError}
         isStreaming={isStreaming}
+        stressTotal={stressTotal}
+        stressCompleted={stressCompleted}
+        stressFailed={stressFailed}
+        isStressRunning={isStressRunning}
       />
 
       <PlayerSection targetFormat={targetFormat} audioUrl={audioUrl} />

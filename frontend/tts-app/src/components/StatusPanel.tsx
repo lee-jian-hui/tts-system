@@ -14,6 +14,11 @@ interface Props {
   voicesError: string | null
   lastError: string | null
   isStreaming: boolean
+  // Stress test metrics (optional)
+  stressTotal: number
+  stressCompleted: number
+  stressFailed: number
+  isStressRunning: boolean
 }
 
 export function StatusPanel({
@@ -30,6 +35,10 @@ export function StatusPanel({
   voicesError,
   lastError,
   isStreaming,
+  stressTotal,
+  stressCompleted,
+  stressFailed,
+  isStressRunning,
 }: Props) {
   return (
     <section className="status-panel">
@@ -75,6 +84,13 @@ export function StatusPanel({
           <span className="dot" />
           <span className="dot" />
         </div>
+      )}
+      {stressTotal > 0 && (
+        <p>
+          <strong>Stress test:</strong>{' '}
+          {stressCompleted}/{stressTotal} completed, {stressFailed} failed{' '}
+          {isStressRunning ? '(running)' : '(finished)'}
+        </p>
       )}
       {voicesLoading && <p>Loading voices...</p>}
       {voicesError && (

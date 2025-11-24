@@ -3,6 +3,7 @@ import type { TargetFormat, VoiceInfo } from '../types'
 
 interface Props {
   text: string
+  isBusy: boolean
   provider: string
   voice: string
   targetFormat: TargetFormat
@@ -16,6 +17,7 @@ interface Props {
 
 export function TtsForm({
   text,
+  isBusy,
   provider,
   voice,
   targetFormat,
@@ -93,7 +95,11 @@ export function TtsForm({
         </select>
       </div>
 
-      <button type="submit">Start Session</button>
+      <div className="form-actions">
+        <button type="submit" disabled={isBusy}>
+          Start Session
+        </button>
+      </div>
     </form>
   )
 }
