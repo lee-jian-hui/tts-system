@@ -94,11 +94,14 @@ async def create_session(
             status_code=429,
             detail="Rate limit exceeded for this client",
         )
-
     from app.container import get_tts_service  # local to avoid cycles
+    from app.container import get_provider_registry
+
+    registry = get_provider_registry()
 
     try:
-        session = get_tts_service().create_session(req)
+        normalized_req = await _normalize_tts_request(req, registry)
+        session = get_tts_service().create_session(normalized_req)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -110,6 +113,67 @@ async def create_session(
         ws_url = "wss://" + ws_url[len("https://") :]
 
     return CreateTTSSessionResponse(session_id=session.id, ws_url=ws_url)
+
+
+def _canonicalize_bcp47(tag: str) -> str:
+    """Very small BCP-47 canonicalization: Ll-RR where possible.
+
+    Examples:
+    - 'en-us' -> 'en-US'
+    - 'EN-us' -> 'en-US'
+    """
+    parts = tag.split("-")
+    if not parts:
+        return tag
+    primary = parts[0].lower()
+    rest = [p.upper() if len(p) == 2 else p for p in parts[1:]]
+    return "-".join([primary, *rest]) if rest else primary
+
+
+async def _normalize_tts_request(
+    req: CreateTTSSessionRequest,
+    registry,
+) -> CreateTTSSessionRequest:
+    """Normalize and validate provider / voice / language / text.
+
+    - Ensures provider exists.
+    - Ensures voice exists for that provider.
+    - Normalizes/validates language against the provider voice.
+    - Strips and validates text.
+    """
+    provider = registry.get(req.provider)
+
+    voices = await provider.list_voices()
+    voice = next((v for v in voices if v.id == req.voice), None)
+    if voice is None:
+        raise ValueError(
+            f"unknown voice '{req.voice}' for provider '{provider.id}'"
+        )
+
+    voice_lang = _canonicalize_bcp47(voice.language)
+    if req.language:
+        req_lang = _canonicalize_bcp47(req.language)
+        if req_lang != voice_lang:
+            raise ValueError(
+                f"language '{req.language}' is not supported by voice '{voice.id}' "
+                f"(expected '{voice.language}')"
+            )
+        language = voice_lang
+    else:
+        language = voice_lang
+
+    text = req.text.strip()
+    if not text:
+        raise ValueError("text must not be empty after normalization")
+
+    return req.copy(
+        update={
+            "provider": provider.id,
+            "voice": voice.id,
+            "language": language,
+            "text": text,
+        }
+    )
 
 
 @router.get("/metrics")
