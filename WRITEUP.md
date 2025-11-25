@@ -134,6 +134,10 @@ I relied primarily on automated tests at three levels:
 - **Integration tests** that exercise the FastAPI app via `TestClient`, covering HTTP endpoints, WebSocket streaming (including `seq` ordering), and metrics/logging middleware.
 - **End-to-end tests** that create sessions and stream audio through the public API for both the mock tone provider and (when available) Coqui, ensuring the main user flows behave correctly.
 
+### 3.8 Frontend Stress Test Mode
+
+As a bonus, I added a simple stress-test mode to the frontend. It reuses the public API to fire many synthetic sessions (configurable total count and concurrency) from the browser, then streams and discards audio while collecting metrics (bytes, chunks, latency, success/failure counts). In parallel, the UI polls the backend `/metrics` endpoint and renders small sparklines for active streams, rate-limit usage, and in-flight stress sessions, which makes it easy to observe how the gateway behaves under load and how rate limiting kicks in without needing an external load-testing tool.
+
 
 ## 4. Lessons Learned
 

@@ -169,6 +169,22 @@ body {
   margin: 0.3rem 0;
 }
 
+.backend-metrics-container {
+  margin-top: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid #374151;
+  background: radial-gradient(circle at top left, #020617, #020617 40%, #030712);
+}
+
+.backend-metrics-container h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+}
+
 .metrics-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

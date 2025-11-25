@@ -32,8 +32,12 @@ export function StressForm({
           type="number"
           min={1}
           max={100}
-          value={sessions}
-          onChange={(e) => onSessionsChange(Number(e.target.value) || 0)}
+          value={sessions === 0 ? '' : sessions}
+          onChange={(e) => {
+            const raw = e.target.value
+            const next = raw === '' ? 0 : Number(raw)
+            onSessionsChange(Number.isNaN(next) ? 0 : next)
+          }}
           disabled={isBusy}
         />
       </div>
@@ -44,8 +48,12 @@ export function StressForm({
           type="number"
           min={1}
           max={20}
-          value={concurrency}
-          onChange={(e) => onConcurrencyChange(Number(e.target.value) || 0)}
+          value={concurrency === 0 ? '' : concurrency}
+          onChange={(e) => {
+            const raw = e.target.value
+            const next = raw === '' ? 0 : Number(raw)
+            onConcurrencyChange(Number.isNaN(next) ? 0 : next)
+          }}
           disabled={isBusy}
         />
       </div>
@@ -55,4 +63,3 @@ export function StressForm({
     </form>
   )
 }
-

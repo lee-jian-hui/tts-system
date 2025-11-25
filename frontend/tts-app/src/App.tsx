@@ -4,6 +4,7 @@ import { TtsForm } from './components/TtsForm'
 import { StatusPanel } from './components/StatusPanel'
 import { PlayerSection } from './components/PlayerSection'
 import { StressForm } from './components/StressForm'
+import { useBackendMetrics } from './hooks/useBackendMetrics'
 import type { TargetFormat, VoiceInfo } from './types'
 
 const BASE_URL =
@@ -57,13 +58,9 @@ function App() {
   const [stressFailed, setStressFailed] = useState(0)
   const [stressInFlight, setStressInFlight] = useState(0)
   const [stressMaxInFlight, setStressMaxInFlight] = useState(0)
-  const [backendActiveStreams, setBackendActiveStreams] = useState<number | null>(null)
-  const [backendSessionsCompleted, setBackendSessionsCompleted] = useState<number | null>(null)
-  const [backendSessionsFailed, setBackendSessionsFailed] = useState<number | null>(null)
-  const [historyActiveStreams, setHistoryActiveStreams] = useState<number[]>([])
-  const [historyStressInFlight, setHistoryStressInFlight] = useState<number[]>([])
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
-  const [droppedFrames, setDroppedFrames] = useState(0)
+  const [droppedNetworkFrames, setDroppedNetworkFrames] = useState(0)
+  const [droppedPlaybackFrames, setDroppedPlaybackFrames] = useState(0)
   const [limitLiveBuffer, setLimitLiveBuffer] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -76,77 +73,17 @@ function App() {
   const firstChunkSeenRef = useRef<boolean>(false)
   const isBusy = isStreaming || isStressRunning
 
+  const backendMetrics = useBackendMetrics(
+    BASE_URL,
+    isStressRunning,
+    stressInFlight,
+  )
+
   useEffect(() => {
     if (!isBusy) {
       setToast(null)
     }
   }, [isBusy])
-
-  // Poll backend Prometheus metrics while stress test is running,
-  // and sample stressInFlight for simple charting.
-  useEffect(() => {
-    const pollMetrics = async () => {
-      try {
-        const resp = await fetch(`${BASE_URL}/metrics`)
-        if (!resp.ok) {
-          return
-        }
-        const text = await resp.text()
-
-        let activeStreams = 0
-        let sessionsCompleted = 0
-        let sessionsFailed = 0
-
-        const lines = text.split('\n')
-        for (const line of lines) {
-          if (line.startsWith('tts_active_streams')) {
-            const parts = line.trim().split(/\s+/)
-            const value = Number.parseFloat(parts[parts.length - 1])
-            if (!Number.isNaN(value)) {
-              activeStreams += value
-            }
-          } else if (line.startsWith('tts_sessions_total')) {
-            const parts = line.trim().split(/\s+/)
-            const value = Number.parseFloat(parts[parts.length - 1])
-            if (Number.isNaN(value)) continue
-            if (line.includes('status="completed"')) {
-              sessionsCompleted += value
-            } else if (line.includes('status="failed"')) {
-              sessionsFailed += value
-            }
-          }
-        }
-
-        setBackendActiveStreams(activeStreams)
-        setBackendSessionsCompleted(sessionsCompleted)
-        setBackendSessionsFailed(sessionsFailed)
-        // Sample backend active streams history.
-        setHistoryActiveStreams((prev) => {
-          const next = [...prev, activeStreams]
-          return next.length > 30 ? next.slice(next.length - 30) : next
-        })
-        // Sample stress in-flight history only while a stress run is active.
-        if (isStressRunning) {
-          setHistoryStressInFlight((prev) => {
-            const next = [...prev, stressInFlight]
-            return next.length > 30 ? next.slice(next.length - 30) : next
-          })
-        }
-      } catch {
-        // Ignore metrics errors in the UI.
-      }
-    }
-
-    // Initial poll, then interval.
-    void pollMetrics()
-    const id = window.setInterval(() => {
-      void pollMetrics()
-    }, 2000)
-
-    return () => {
-      window.clearInterval(id)
-    }
-  }, [isStressRunning, stressInFlight])
 
   const enqueuePcmChunk = (pcmBytes: Uint8Array, streamSampleRate: number) => {
     const ctx = audioCtxRef.current
@@ -246,7 +183,8 @@ function App() {
     setBytes(0)
     setChunks(0)
     setLatencyMs(null)
-    setDroppedFrames(0)
+    setDroppedNetworkFrames(0)
+    setDroppedPlaybackFrames(0)
     lastSeqRef.current = null
     firstChunkSeenRef.current = false
     sessionStartRef.current = performance.now()
@@ -322,7 +260,8 @@ function App() {
     setBytes(0)
     setChunks(0)
     setLatencyMs(null)
-    setDroppedFrames(0)
+    setDroppedNetworkFrames(0)
+    setDroppedPlaybackFrames(0)
     setStressTotal(totalSessions)
     setStressCompleted(0)
     setStressFailed(0)
@@ -438,7 +377,7 @@ function App() {
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err, event.data)
         setLastError('Failed to parse WebSocket message. See console for details.')
-        setDroppedFrames((d) => d + 1)
+        setDroppedNetworkFrames((d) => d + 1)
         return
       }
       if (msg.type === 'audio') {
@@ -446,7 +385,7 @@ function App() {
         if (lastSeqRef.current != null && seq !== lastSeqRef.current + 1) {
           const gap = seq - lastSeqRef.current - 1
           if (gap > 0) {
-            setDroppedFrames((d) => d + gap)
+            setDroppedNetworkFrames((d) => d + gap)
           }
         }
         lastSeqRef.current = seq
@@ -461,7 +400,7 @@ function App() {
               // If we are already buffering more than ~2 seconds ahead,
               // drop this chunk instead of increasing latency further.
               if (leadSeconds > 2.0) {
-                setDroppedFrames((d) => d + 1)
+                setDroppedPlaybackFrames((d) => d + 1)
                 return
               }
             }
@@ -475,7 +414,7 @@ function App() {
             setLastError(
               'Failed to enqueue PCM chunk for playback. See console for details.',
             )
-            setDroppedFrames((d) => d + 1)
+            setDroppedPlaybackFrames((d) => d + 1)
           }
         } else {
           // File-oriented path for container formats (wav/mp3).
@@ -673,7 +612,8 @@ function App() {
         bytes={bytes}
         chunks={chunks}
         latencyMs={latencyMs}
-        droppedFrames={droppedFrames}
+        droppedNetworkFrames={droppedNetworkFrames}
+        droppedPlaybackFrames={droppedPlaybackFrames}
         targetFormat={targetFormat}
         sampleRate={sampleRate}
         limitLiveBuffer={limitLiveBuffer}
@@ -688,11 +628,16 @@ function App() {
         isStressRunning={isStressRunning}
         stressInFlight={stressInFlight}
         stressMaxInFlight={stressMaxInFlight}
-        backendActiveStreams={backendActiveStreams}
-        backendSessionsCompleted={backendSessionsCompleted}
-        backendSessionsFailed={backendSessionsFailed}
-        historyActiveStreams={historyActiveStreams}
-        historyStressInFlight={historyStressInFlight}
+        backendActiveStreams={backendMetrics.activeStreams}
+        backendSessionsCompleted={backendMetrics.sessionsCompleted}
+        backendSessionsFailed={backendMetrics.sessionsFailed}
+        historyActiveStreams={backendMetrics.historyActiveStreams}
+        historyStressInFlight={backendMetrics.historyStressInFlight}
+        backendRateLimitUsage={backendMetrics.rateLimitUsage}
+        historyRateLimitUsage={backendMetrics.historyRateLimitUsage}
+        backendRateLimitWindowRemaining={
+          backendMetrics.rateLimitWindowRemaining
+        }
       />
 
       <PlayerSection targetFormat={targetFormat} audioUrl={audioUrl} />

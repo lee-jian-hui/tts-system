@@ -57,6 +57,13 @@ TTS_RATE_LIMIT_MAX_BUCKET_USAGE = Gauge(
     ["scope"],
 )
 
+TTS_RATE_LIMIT_WINDOW_REMAINING_SECONDS = Gauge(
+    "tts_rate_limit_window_remaining_seconds",
+    "Estimated number of seconds until the rate-limit window resets "
+    "for the most recently seen key in this scope.",
+    ["scope"],
+)
+
 
 def record_session_created(provider_id: str) -> None:
     TTS_SESSIONS_TOTAL.labels(provider=provider_id, status="created").inc()
@@ -114,3 +121,10 @@ def record_rate_limit_max_bucket_usage(scope: str, usage_fraction: float) -> Non
     the most heavily used key's count to the configured max_requests_per_window.
     """
     TTS_RATE_LIMIT_MAX_BUCKET_USAGE.labels(scope=scope).set(usage_fraction)
+
+
+def record_rate_limit_window_remaining(scope: str, remaining_seconds: float) -> None:
+    """Record approximate remaining time until the rate-limit window resets."""
+    TTS_RATE_LIMIT_WINDOW_REMAINING_SECONDS.labels(scope=scope).set(
+        max(0.0, remaining_seconds)
+    )

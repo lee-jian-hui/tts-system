@@ -59,7 +59,14 @@ class RateLimiter:
                     max_count = 0
                 if self._config.max_requests_per_window > 0:
                     usage = max_count / float(self._config.max_requests_per_window)
-                    app_metrics.record_rate_limit_max_bucket_usage(scope="ip", usage_fraction=usage)
+                    app_metrics.record_rate_limit_max_bucket_usage(
+                        scope="ip", usage_fraction=usage
+                    )
+                # Remaining time until this window resets for this key.
+                remaining = self._config.window_seconds - (now - window_start)
+                app_metrics.record_rate_limit_window_remaining(
+                    scope="ip", remaining_seconds=remaining
+                )
                 return False
 
             # Record the successful request.
@@ -72,5 +79,12 @@ class RateLimiter:
                 max_count = 0
             if self._config.max_requests_per_window > 0:
                 usage = max_count / float(self._config.max_requests_per_window)
-                app_metrics.record_rate_limit_max_bucket_usage(scope="ip", usage_fraction=usage)
+                app_metrics.record_rate_limit_max_bucket_usage(
+                    scope="ip", usage_fraction=usage
+                )
+            # Remaining time until this window resets for this key.
+            remaining = self._config.window_seconds - (now - window_start)
+            app_metrics.record_rate_limit_window_remaining(
+                scope="ip", remaining_seconds=remaining
+            )
             return True

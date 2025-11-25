@@ -5,7 +5,8 @@ interface Props {
   bytes: number
   chunks: number
   latencyMs: number | null
-  droppedFrames: number
+  droppedNetworkFrames: number
+  droppedPlaybackFrames: number
   targetFormat: TargetFormat
   sampleRate: number
   limitLiveBuffer: boolean
@@ -26,6 +27,9 @@ interface Props {
   backendSessionsFailed: number | null
   historyActiveStreams: number[]
   historyStressInFlight: number[]
+  backendRateLimitUsage: number | null
+  historyRateLimitUsage: number[]
+  backendRateLimitWindowRemaining: number | null
 }
 
 export function StatusPanel({
@@ -33,7 +37,8 @@ export function StatusPanel({
   bytes,
   chunks,
   latencyMs,
-  droppedFrames,
+  droppedNetworkFrames,
+  droppedPlaybackFrames,
   targetFormat,
   sampleRate,
   limitLiveBuffer,
@@ -53,6 +58,9 @@ export function StatusPanel({
   backendSessionsFailed,
   historyActiveStreams,
   historyStressInFlight,
+  backendRateLimitUsage,
+  historyRateLimitUsage,
+  backendRateLimitWindowRemaining,
 }: Props) {
   const renderSparkline = (data: number[]) => {
     if (!data.length) return null
@@ -116,7 +124,12 @@ export function StatusPanel({
         </p>
       )}
       <p>
-        Dropped frames: <span>{droppedFrames}</span>
+        Dropped frames (network/backend):{' '}
+        <span>{droppedNetworkFrames}</span>
+      </p>
+      <p>
+        Dropped frames (playback/frontend):{' '}
+        <span>{droppedPlaybackFrames}</span>
       </p>
       {targetFormat === 'pcm16' && (
         <p>
@@ -154,38 +167,79 @@ export function StatusPanel({
       )}
       {(backendActiveStreams != null ||
         backendSessionsCompleted != null ||
-        backendSessionsFailed != null) && (
-        <p>
-          <strong>Backend metrics:</strong>{' '}
-          {backendActiveStreams != null && (
-            <>
-              active streams {backendActiveStreams}
-              {', '}
-            </>
+        backendSessionsFailed != null ||
+        backendRateLimitUsage != null ||
+        backendRateLimitWindowRemaining != null ||
+        historyStressInFlight.length > 0 ||
+        historyActiveStreams.length > 0 ||
+        historyRateLimitUsage.length > 0) && (
+        <div className="backend-metrics-container">
+          <h3>Backend / load metrics</h3>
+          {(backendActiveStreams != null ||
+            backendSessionsCompleted != null ||
+            backendSessionsFailed != null ||
+            backendRateLimitUsage != null ||
+            backendRateLimitWindowRemaining != null) && (
+            <p>
+              {backendActiveStreams != null && (
+                <>
+                  active streams {backendActiveStreams}
+                  {', '}
+                </>
+              )}
+              {backendSessionsCompleted != null && (
+                <>
+                  sessions completed {backendSessionsCompleted}
+                  {', '}
+                </>
+              )}
+              {backendSessionsFailed != null && (
+                <>
+                  sessions failed {backendSessionsFailed}
+                  {', '}
+                </>
+              )}
+              {backendRateLimitUsage != null && (
+                <>
+                  rate limit usage{' '}
+                  {(backendRateLimitUsage * 100).toFixed(0)}
+                  %
+                </>
+              )}
+              {backendRateLimitWindowRemaining != null && (
+                <>
+                  {', '}window resets in{' '}
+                  {backendRateLimitWindowRemaining.toFixed(0)}s
+                </>
+              )}
+            </p>
           )}
-          {backendSessionsCompleted != null && (
-            <>
-              sessions completed {backendSessionsCompleted}
-              {', '}
-            </>
-          )}
-          {backendSessionsFailed != null && (
-            <>sessions failed {backendSessionsFailed}</>
-          )}
-        </p>
-      )}
-      {(historyStressInFlight.length > 0 || historyActiveStreams.length > 0) && (
-        <div className="metrics-charts">
-          {historyStressInFlight.length > 0 && (
-            <div className="metrics-chart">
-              <div className="metrics-chart-label">Stress in-flight</div>
-              {renderSparkline(historyStressInFlight)}
-            </div>
-          )}
-          {historyActiveStreams.length > 0 && (
-            <div className="metrics-chart">
-              <div className="metrics-chart-label">Backend active streams</div>
-              {renderSparkline(historyActiveStreams)}
+          {(historyStressInFlight.length > 0 ||
+            historyActiveStreams.length > 0 ||
+            historyRateLimitUsage.length > 0) && (
+            <div className="metrics-charts">
+              {historyStressInFlight.length > 0 && (
+                <div className="metrics-chart">
+                  <div className="metrics-chart-label">Stress in-flight</div>
+                  {renderSparkline(historyStressInFlight)}
+                </div>
+              )}
+              {historyActiveStreams.length > 0 && (
+                <div className="metrics-chart">
+                  <div className="metrics-chart-label">
+                    Backend active streams
+                  </div>
+                  {renderSparkline(historyActiveStreams)}
+                </div>
+              )}
+              {historyRateLimitUsage.length > 0 && (
+                <div className="metrics-chart">
+                  <div className="metrics-chart-label">
+                    Rate-limit usage (% of max bucket)
+                  </div>
+                  {renderSparkline(historyRateLimitUsage)}
+                </div>
+              )}
             </div>
           )}
         </div>
