@@ -175,6 +175,13 @@ Frontend:
 
 - `VITE_TTS_API_BASE_URL`  
   - Base URL for the backend TTS API (e.g. `http://localhost:8080` or `http://backend:8080` in Docker).
+- `VITE_STRESS_MAX_SESSIONS` (default `100`)  
+  - Maximum value allowed in the stress-test "Total sessions" field.
+- `VITE_STRESS_MAX_CONCURRENCY` (default `20`)  
+  - Maximum value allowed in the stress-test "Max concurrency" field.
+- `VITE_METRICS_POLL_INTERVAL_MS` (default `2000`)  
+  - Interval, in milliseconds, at which the frontend polls `/metrics` while a
+    stress test is running.
 
 ## Adding a new provider
 

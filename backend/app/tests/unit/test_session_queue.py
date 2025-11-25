@@ -68,7 +68,7 @@ async def test_enqueue_stream_request_streams_when_queue_not_configured() -> Non
   session = tts.create_session(req)
 
   ws = _DummyWebSocket()
-  await enqueue_stream_request(session.id, ws)
+  await enqueue_stream_request(session.id, ws, tts_service=tts)
 
   # We expect at least one audio message and a final eos.
   types = [m.get("type") for m in ws.sent]
@@ -82,8 +82,9 @@ async def test_streaming_queue_limits_concurrency_and_depth() -> None:
 
   tts = _build_tts_service()
 
-  # Configure queue with maxsize=1 and worker_count=1 to make limits observable.
-  configure_session_queue(tts_service=tts, maxsize=1, worker_count=1)
+  # Configure queue with maxsize=1 and worker_count=0 so that nothing drains
+  # the queue; this makes QueueFull deterministic for the test.
+  configure_session_queue(tts_service=tts, maxsize=1, worker_count=0)
 
   # Create two sessions; the second enqueue should fail once the queue is full.
   req1 = _make_request()
@@ -94,10 +95,9 @@ async def test_streaming_queue_limits_concurrency_and_depth() -> None:
   ws1 = _DummyWebSocket()
   ws2 = _DummyWebSocket()
 
-  # First request should be accepted (queued or processed by worker).
-  await enqueue_stream_request(s1.id, ws1)
+  # First request should be accepted into the queue.
+  await enqueue_stream_request(s1.id, ws1, tts_service=tts)
 
   # Second request should overflow the small queue and raise.
   with pytest.raises(SessionQueueFullError):
-    await enqueue_stream_request(s2.id, ws2)
-
+    await enqueue_stream_request(s2.id, ws2, tts_service=tts)

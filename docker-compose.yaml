@@ -9,6 +9,12 @@ services:
       # Enable/disable providers as needed
       MOCK_TONE_ENABLED: "1"
       COQUI_ENABLED: "1"
+      # Backend rate limiting (per IP for POST /v1/tts/sessions)
+      RATE_LIMIT_MAX_REQUESTS_PER_WINDOW: "50"
+      RATE_LIMIT_WINDOW_SECONDS: "60"
+      # Bounded streaming queue configuration
+      SESSION_QUEUE_MAXSIZE: "5"
+      SESSION_QUEUE_WORKER_COUNT: "8"
     restart: unless-stopped
 
   frontend:
@@ -20,6 +26,10 @@ services:
     environment:
       # Backend base URL used by the frontend App
       VITE_TTS_API_BASE_URL: "http://localhost:8080"
+      # Stress-test configuration for the frontend UI
+      VITE_STRESS_MAX_SESSIONS: "10000"
+      VITE_STRESS_MAX_CONCURRENCY: "1000"
+      VITE_METRICS_POLL_INTERVAL_MS: "2000"
     depends_on:
       - backend
     restart: unless-stopped

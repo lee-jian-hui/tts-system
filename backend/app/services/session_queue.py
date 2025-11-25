@@ -151,6 +151,7 @@ def configure_session_queue(
 async def enqueue_stream_request(
     session_id: str,
     websocket: WebSocket,
+    tts_service: TTSService | None = None,
 ) -> None:
     """Enqueue a streaming request and await completion.
 
@@ -158,12 +159,15 @@ async def enqueue_stream_request(
     current task for simplicity. If the queue is full, raises
     SessionQueueFullError.
     """
-    from app.container import get_tts_service  # local import to avoid cycles
-
     if _queue is None:
         # Queue not configured; stream inline.
         logger.debug("Streaming queue not configured; streaming inline.")
-        tts_service = get_tts_service()
+        if tts_service is None:
+            from app.container import (
+                get_tts_service,  # local import to avoid cycles
+            )
+
+            tts_service = get_tts_service()
         seq = 1
         try:
             async for chunk in tts_service.stream_session_audio(session_id):
