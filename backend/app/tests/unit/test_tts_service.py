@@ -13,6 +13,7 @@ from app.services.circuit_breaker import (
     CircuitBreakerRegistry,
 )
 from app.services.rate_limiter import RateLimitConfig, RateLimiter
+from app.metrics import TTS_ACTIVE_STREAMS
 
 
 def _build_tts_service() -> tuple[TTSService, InMemoryTTSSessionRepository]:
@@ -50,6 +51,50 @@ def test_create_session_persists_session() -> None:
     assert stored is not None
     assert stored.text == "Hello KeyReply"
     assert stored.status == SessionStatus.PENDING
+
+
+def _get_active_streams(provider: str) -> float:
+    for metric in TTS_ACTIVE_STREAMS.collect():
+        for sample in metric.samples:
+            if (
+                sample.name == "tts_active_streams"
+                and sample.labels.get("provider") == provider
+            ):
+                return float(sample.value)
+    return 0.0
+
+
+@pytest.mark.asyncio
+async def test_active_streams_metric_increments_and_decrements() -> None:
+    """TTS_ACTIVE_STREAMS should reflect the lifetime of a stream_session_audio call."""
+
+    service, repo = _build_tts_service()
+
+    req = _make_request()
+    session = service.create_session(req)
+
+    # Ensure gauge starts at 0.
+    assert _get_active_streams("mock_tone") == 0.0
+
+    # Consume the stream manually so we can inspect the gauge mid-stream.
+    agen = service.stream_session_audio(session.id)
+
+    # First chunk should cause active_streams to go to 1.
+    _ = await agen.__anext__()
+    assert _get_active_streams("mock_tone") == 1.0
+
+    # Drain the rest of the stream.
+    chunks: list[bytes] = []
+    try:
+        while True:
+            chunk = await agen.__anext__()
+            chunks.append(chunk)
+    except StopAsyncIteration:
+        pass
+
+    assert len(chunks) >= 0
+    # After completion, the gauge should have decremented back to 0.
+    assert _get_active_streams("mock_tone") == 0.0
 
 
 @pytest.mark.asyncio
