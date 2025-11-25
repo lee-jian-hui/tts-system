@@ -42,7 +42,7 @@ For protocol-level flows and core logic diagrams, see:
 - `Core Services`
   - `AudioTranscodeService` wraps `ffmpeg` for on-the-fly encoding / resampling.
   - `TTSSessionRepository` and `VoiceRepository` provide session and voice catalog storage.
-  - A small in-memory **session queue + worker pool** smooths bursts of `POST /v1/tts/sessions` requests while bounding the amount of queued work; when the queue is full, new session creation attempts fail fast.
+  - A small in-memory **streaming queue + worker pool** smooths bursts of WebSocket `stream_tts` requests while bounding the amount of queued work; when the queue is full, new streaming attempts fail fast with a structured overload error.
 
 ---
 
@@ -79,19 +79,17 @@ flowchart TD
     end
 
     subgraph Gateway["TTS Gateway (FastAPI)"]
-        APIHTTP["REST API Layer
+        APIHTTP["HTTP + WebSocket API Layer
         (/v1/tts/sessions, 
-        /v1/voices)"]
-        APIWS["WebSocket Endpoint
-        (/v1/tts/stream/
-        {session_id})"]
+        /v1/voices,
+        /v1/tts/stream/{session_id})"]
         SVC["TTSService"]
         REG["ProviderRegistry"]
         TRANS["AudioTranscodeService
         (ffmpeg)"]
         SESSREPO["TTSSessionRepository"]
         VOICEREPO["VoiceRepository"]
-        SESSQ["Session Queue +
+        SESSQ["Streaming Queue +
         Workers"]
     end
 
@@ -101,20 +99,20 @@ flowchart TD
         P3["CoquiTTSProvider"]
     end
 
-    C -- "POST /v1/tts/sessions " --> APIHTTP
-    APIHTTP -- "session info {id: x , ws: y} " --> C
+    C -- "POST /v1/tts/sessions" --> APIHTTP
+    APIHTTP -- "session info {id: x , ws: y}" --> C
 
+    C -- "WS /v1/tts/stream/
+    {session_id}" --> APIHTTP
     APIHTTP --> SESSQ
     SESSQ --> SVC
     SVC --> SESSREPO
     SVC --> VOICEREPO
     SVC --> REG
+    SVC --> TRANS
+    SVC --> APIHTTP
     REG --> P1
     REG --> P2
     REG --> P3
     P1 & P2 & P3 --> TRANS
-    C -- "WS /v1/tts/stream/
-    {session_id}" --> APIWS
-    APIWS --> TRANS
-    TRANS --> C
 ```
