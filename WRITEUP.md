@@ -83,12 +83,13 @@ This protocol makes it easy to reason about ordering and to spot issues during d
 
 ### 3.3 Backpressure
 
-I chose a simple, implicit backpressure mechanism:
+Backpressure is handled with a mix of explicit and implicit mechanisms:
 
-- On the server, each call to `await websocket.send_json(...)` in the WebSocket handler acts as a backpressure point. If the client or network slows down, sending takes longer, which naturally slows reading from the provider stream.
-- On the client, for live PCM16 playback, I track how far ahead the scheduled playhead is relative to the current time in the Web Audio context. When a “limit buffer” option is enabled and that lead exceeds a threshold (~2 seconds), new chunks are dropped and counted as dropped frames instead of increasing latency indefinitely.
+- On the server, WebSocket `stream_tts` requests enqueue "stream this session" jobs into a bounded in-process queue that is drained by a fixed worker pool. Workers run `TTSService.stream_session_audio`, which performs provider calls, ffmpeg transcoding, and WebSocket sends. The queue size and worker count together cap how many heavy streams can be active or waiting in memory. When both are saturated, new streams are rejected with a structured `503 Gateway overloaded` response instead of building an unbounded backlog.
+- Each `await websocket.send_json(...)` call also acts as a backpressure point. If the client or network slows down, sending takes longer, which naturally slows how fast workers pull new audio chunks from providers.
+- On the client, for live PCM16 playback, I track how far ahead the scheduled playhead is relative to the current time in the Web Audio context. When a "limit buffer" option is enabled and that lead exceeds a threshold (about 2 seconds), new chunks are dropped and counted as dropped frames instead of increasing latency indefinitely.
 
-For `wav`/`mp3`, the streaming path is used mainly for metrics, actual playback happens via a single file fetched once the stream ends, so backpressure is less critical to user experience there.
+For `wav` and `mp3`, the streaming path is used mainly for metrics. Actual playback happens via a single file fetched once the stream ends, so backpressure is less critical to user experience there.
 
 ### 3.4 Normalization of Requests (text, voice, language, format)
 
@@ -142,8 +143,8 @@ Later, I refined this queue to target the truly heavy work: **streaming** rather
 
 I relied primarily on automated tests at three levels:
 
-- **Unit tests** for `TTSService`, `AudioTranscodeService`, and rate limiting, using `pytest`/`pytest-asyncio` to cover control flow, error handling, and edge cases.
-- **Integration tests** that exercise the FastAPI app via `TestClient`, covering HTTP endpoints, WebSocket streaming (including `seq` ordering), and metrics/logging middleware.
+- **Unit tests** for `TTSService`, `AudioTranscodeService`, the `SessionQueue`, and rate limiting, using `pytest`/`pytest-asyncio` to cover control flow, error handling, and edge cases (including “queue full” behavior when workers are all busy).
+- **Integration tests** that exercise the FastAPI app via `TestClient`, covering HTTP endpoints, WebSocket streaming (including `seq` ordering and overload paths like `503` when the streaming queue is full), and metrics/logging middleware.
 - **End-to-end tests** that create sessions and stream audio through the public API for both the mock tone provider and (when available) Coqui, ensuring the main user flows behave correctly.
 
 ### 3.8 Frontend Stress Test Mode
@@ -183,6 +184,7 @@ If this project were to evolve into a production gateway, there are several clea
 
 - **Persistent storage and scaling**  
   Move session storage out of memory into a persistent store (e.g., Redis or a database), which would enable horizontal scaling and better observability of session history.
+  Today, parameters like `SESSION_QUEUE_MAXSIZE` and `SESSION_QUEUE_WORKER_COUNT` are tuned manually based on expected load; in a more mature deployment they would be informed by real production metrics and operational SLOs.
 
 - **Richer transcoding and TTS infrastructure**  
   Consider long-lived ffmpeg pipelines, a separate transcoding service, or GPU-accelerated providers for higher throughput and lower latency, especially for large or concurrent workloads.
@@ -190,13 +192,7 @@ If this project were to evolve into a production gateway, there are several clea
 - **Auth, Security and governance**  
   Add authentication and authorization, more sophisticated rate limiting (per token or user), and better multi-tenant isolation if used as a shared gateway.
 
-- **Bonus features from the assignment**  
-  Explore SSML support, word/phoneme timing markers, and caching/deduplication to reduce repeated work and improve responsiveness.
-
-- **Extending to include more providers**
-  this might require some refactors surrounding implement a clean system to register what providers we support, etc. and expose that to the frontend as well
-
-  however the design currently still enables one to easily extend to add a new provider in the backend
+- **Extending to include more providers, langauges and tones**
+The current design already makes it easy to plug in new providers by implementing a small interface and registering them, but supporting many providers, languages, and tones cleanly will likely require some refactoring. In particular, we need to decide how to model language support: for example, whether different languages are served by different TTS models per provider, and how routing should work when a client requests a language that only some models support. We may want a normalized representation of languages and tones in the gateway (for example en-US, ko-KR, “formal”, “casual”), and a mapping layer that translates that into concrete provider and model choices. Those are the main architectural concerns if this grows into a multi-language, multi-provider gateway.
   
-
 Overall, the current implementation meets the assignment’s requirements while keeping in mind the extensibility required to evolve beyond a simple local demo
