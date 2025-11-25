@@ -182,6 +182,10 @@ Frontend:
 - `VITE_METRICS_POLL_INTERVAL_MS` (default `2000`)  
   - Interval, in milliseconds, at which the frontend polls `/metrics` while a
     stress test is running.
+- `VITE_STRESS_DEFAULT_SESSIONS` (default to `VITE_STRESS_MAX_SESSIONS`)  
+  - Default "Total sessions" prefilled in the stress-test form.
+- `VITE_STRESS_DEFAULT_CONCURRENCY` (default to `VITE_STRESS_MAX_CONCURRENCY`)  
+  - Default "Max concurrency" prefilled in the stress-test form.
 
 ## Adding a new provider
 

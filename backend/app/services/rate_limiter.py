@@ -88,3 +88,45 @@ class RateLimiter:
                 scope="ip", remaining_seconds=remaining
             )
             return True
+
+    def sample_metrics(self) -> None:
+        """Re-sample rate-limit usage/window metrics without a new request."""
+        now = time.time()
+        with self._lock:
+            # Drop expired buckets so that usage decays after the window passes.
+            if self._buckets:
+                new_buckets: Dict[str, Tuple[float, int]] = {}
+                for key, (window_start, count) in self._buckets.items():
+                    if now - window_start < self._config.window_seconds:
+                        new_buckets[key] = (window_start, count)
+                self._buckets = new_buckets
+
+            if not self._buckets:
+                # No active buckets: usage and remaining time are effectively 0.
+                app_metrics.record_rate_limit_max_bucket_usage(
+                    scope="ip", usage_fraction=0.0
+                )
+                app_metrics.record_rate_limit_window_remaining(
+                    scope="ip", remaining_seconds=0.0
+                )
+                return
+
+            max_count = max(count for _, count in self._buckets.values())
+            if self._config.max_requests_per_window > 0:
+                usage = max_count / float(self._config.max_requests_per_window)
+            else:
+                usage = 0.0
+
+            # Use the "worst case" remaining time across active keys.
+            remaining_candidates = [
+                self._config.window_seconds - (now - window_start)
+                for (window_start, _count) in self._buckets.values()
+            ]
+            remaining = max(remaining_candidates) if remaining_candidates else 0.0
+
+            app_metrics.record_rate_limit_max_bucket_usage(
+                scope="ip", usage_fraction=usage
+            )
+            app_metrics.record_rate_limit_window_remaining(
+                scope="ip", remaining_seconds=remaining
+            )

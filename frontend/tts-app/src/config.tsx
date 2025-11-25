@@ -11,8 +11,17 @@ function envInt(name: string, fallback: number): number {
 export const STRESS_MAX_SESSIONS = envInt('VITE_STRESS_MAX_SESSIONS', 100)
 export const STRESS_MAX_CONCURRENCY = envInt('VITE_STRESS_MAX_CONCURRENCY', 20)
 
-export const STRESS_DEFAULT_SESSIONS = Math.min(20, STRESS_MAX_SESSIONS)
-export const STRESS_DEFAULT_CONCURRENCY = Math.min(5, STRESS_MAX_CONCURRENCY)
+// Default values for the stress form. These can be set explicitly via env,
+// and fall back to the configured max values so that a single click can run
+// a maximum-intensity stress test if desired.
+export const STRESS_DEFAULT_SESSIONS = envInt(
+  'VITE_STRESS_DEFAULT_SESSIONS',
+  STRESS_MAX_SESSIONS,
+)
+export const STRESS_DEFAULT_CONCURRENCY = envInt(
+  'VITE_STRESS_DEFAULT_CONCURRENCY',
+  STRESS_MAX_CONCURRENCY,
+)
 
 export const METRICS_POLL_INTERVAL_MS = envInt(
   'VITE_METRICS_POLL_INTERVAL_MS',

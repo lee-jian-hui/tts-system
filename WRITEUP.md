@@ -4,11 +4,16 @@ This write-up summarizes how I approached the TTS gateway assignment, the key ar
 
 ## 1. Approach & Goals
 
-My overall goal was to treat this as a small but realistic gateway that could plausibly evolve into production, rather than a one-off demo. Concretely, I optimized for:
+My overall goal was to treat this as a small but realistic gateway that could plausibly evolve into production, rather than a one-off demo. 
 
+**Concretely, I optimized for mainly:**
 - **Correct streaming behavior**: low-latency, chunked audio over WebSockets with clear ordering and backpressure semantics.
 - **Separation of concerns**: transport, orchestration, providers, and transcoding are clearly separated and testable in isolation.
 - **Extensibility**: adding providers or changing storage / transcoding should not require touching the HTTP/WebSocket handlers.
+- **Handling of heavy load / backpressure**: on the backend I rely on several safeguards: an IP‑based rate limiting time windows to cap session‑creation throughput per client, a bounded streaming queue with a fixed worker pool to limit how many heavy streams can be active or queued in memory, and a provider‑level circuit breaker to stop hammering failing backends. Together these enforce backpressure and admission control so that under load the gateway returns clear 429/503 errors instead of building unbounded backlog or stalling the process.
+
+
+
 
 At the same time, I intentionally constrained scope:
 

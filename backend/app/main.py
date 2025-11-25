@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -77,7 +78,7 @@ def create_app() -> FastAPI:
             type(rate_limiter).__name__,
         )
 
-        # Configure bounded session-creation queue and worker pool.
+        # Configure bounded streaming queue and worker pool.
         configure_session_queue(
             tts_service=tts_service,
             maxsize=settings.session_queue_maxsize,
@@ -88,6 +89,21 @@ def create_app() -> FastAPI:
             settings.session_queue_maxsize,
             settings.session_queue_worker_count,
         )
+
+        # Background task: periodically resample rate-limit metrics so that
+        # Prometheus sees a continuously updated view of usage / window
+        # remaining, even when no new requests are arriving.
+        async def rate_limit_metrics_loop() -> None:
+            while True:
+                await asyncio.sleep(
+                    max(0.1, settings.rate_limit_metrics_poll_interval_seconds)
+                )
+                try:
+                    rate_limiter.sample_metrics()
+                except Exception:
+                    logger.exception("Error while sampling rate-limit metrics")
+
+        asyncio.create_task(rate_limit_metrics_loop())
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:

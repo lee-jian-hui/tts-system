@@ -10,11 +10,12 @@ services:
       MOCK_TONE_ENABLED: "1"
       COQUI_ENABLED: "1"
       # Backend rate limiting (per IP for POST /v1/tts/sessions)
-      RATE_LIMIT_MAX_REQUESTS_PER_WINDOW: "50"
+      RATE_LIMIT_MAX_REQUESTS_PER_WINDOW: "100"
       RATE_LIMIT_WINDOW_SECONDS: "60"
+      RATE_LIMIT_METRICS_POLL_INTERVAL_SECONDS: "2.0"
       # Bounded streaming queue configuration
-      SESSION_QUEUE_MAXSIZE: "5"
-      SESSION_QUEUE_WORKER_COUNT: "8"
+      SESSION_QUEUE_MAXSIZE: "10"
+      SESSION_QUEUE_WORKER_COUNT: "10"
     restart: unless-stopped
 
   frontend:
@@ -30,6 +31,8 @@ services:
       VITE_STRESS_MAX_SESSIONS: "10000"
       VITE_STRESS_MAX_CONCURRENCY: "1000"
       VITE_METRICS_POLL_INTERVAL_MS: "2000"
+      VITE_STRESS_DEFAULT_SESSIONS: "10000"
+      VITE_STRESS_DEFAULT_CONCURRENCY: "1000"
     depends_on:
       - backend
     restart: unless-stopped

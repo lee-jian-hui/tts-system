@@ -17,6 +17,9 @@ class AppConfig:
     rate_limit_window_seconds: int = int(
         os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")
     )
+    rate_limit_metrics_poll_interval_seconds: float = float(
+        os.getenv("RATE_LIMIT_METRICS_POLL_INTERVAL_SECONDS", "2.0")
+    )
 
     # Bounded session-creation queue configuration.
     session_queue_maxsize: int = int(os.getenv("SESSION_QUEUE_MAXSIZE", "5"))
