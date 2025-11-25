@@ -23,7 +23,7 @@ export function StressForm({
 }: Props) {
   return (
     <form onSubmit={onSubmit} className="stress-form">
-      <h2>Stress Test (experimental)</h2>
+      <h2>Stress Test</h2>
       <p className="stress-help">
         Fire multiple synthetic TTS sessions against the backend. Audio is not
         played, only metrics are collected. Use conservative values on your
