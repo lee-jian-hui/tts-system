@@ -119,7 +119,8 @@ def test_websocket_stream_overload_returns_503_and_increments_metric(
             raise SessionQueueFullError("session queue full (fake)")
 
     monkeypatch.setattr(
-        "app.api.enqueue_stream_request", _fake_enqueue_stream_request
+        "app.services.session_queue.enqueue_stream_request",
+        _fake_enqueue_stream_request,
     )
 
     client = TestClient(app)

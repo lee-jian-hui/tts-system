@@ -9,6 +9,7 @@ from app.services.session_queue import (
   configure_session_queue,
   enqueue_stream_request,
   SessionQueueFullError,
+  SessionWorkItem,
 )
 from app.services import TTSService
 from app.providers import ProviderRegistry
@@ -83,21 +84,21 @@ async def test_streaming_queue_limits_concurrency_and_depth() -> None:
   tts = _build_tts_service()
 
   # Configure queue with maxsize=1 and worker_count=0 so that nothing drains
-  # the queue; this makes QueueFull deterministic for the test.
+  # the queue; we will manually fill it to simulate "full".
   configure_session_queue(tts_service=tts, maxsize=1, worker_count=0)
 
-  # Create two sessions; the second enqueue should fail once the queue is full.
-  req1 = _make_request()
-  s1 = tts.create_session(req1)
-  req2 = _make_request()
-  s2 = tts.create_session(req2)
+  # Manually place one work item into the internal queue so that it is full.
+  import app.services.session_queue as session_queue  # type: ignore[import]
 
-  ws1 = _DummyWebSocket()
+  assert session_queue._queue is not None  # type: ignore[attr-defined]
+  loop = asyncio.get_running_loop()
+  fut = loop.create_future()
+  await session_queue._queue.put(  # type: ignore[attr-defined]
+    SessionWorkItem(session_id="s1", websocket=_DummyWebSocket(), future=fut)
+  )
+
+  # Now the next enqueue_stream_request should overflow the small queue and raise.
   ws2 = _DummyWebSocket()
 
-  # First request should be accepted into the queue.
-  await enqueue_stream_request(s1.id, ws1, tts_service=tts)
-
-  # Second request should overflow the small queue and raise.
   with pytest.raises(SessionQueueFullError):
-    await enqueue_stream_request(s2.id, ws2, tts_service=tts)
+    await enqueue_stream_request("s2", ws2, tts_service=tts)
