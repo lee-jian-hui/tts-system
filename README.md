@@ -95,6 +95,56 @@ Then open `http://localhost:5173` and:
 - Start a session and listen to the stream,
 - Observe live metrics (bytes, chunks, latency, dropped frames).
 
+The frontend also exposes an **experimental stress-test panel** that can fire
+multiple synthetic sessions (configurable total sessions and max concurrency)
+against the backend. Audio from these runs is not played; instead, the UI
+collects metrics (success/failure counts, bytes/chunks) and polls the backend
+`/metrics` endpoint to visualize active streams, rate-limit usage, and
+rate-limit window timing as small inline charts.
+
+**Frontend metrics (single session + stress mode)**
+
+- **Bytes received / Chunks** – number of bytes and chunks of audio received
+  over the WebSocket for the current run. In stress mode this is aggregated
+  across all synthetic sessions.
+- **First chunk latency** – time from clicking "Start" to receiving the first
+  `audio` chunk, measured in the browser.
+- **Dropped frames (network/backend)** – counts chunks that the client did not
+  see due to seq gaps or parse errors (i.e., chunks that were missing from the
+  stream as observed on the frontend).
+- **Dropped frames (playback/frontend)** – counts chunks that arrived but were
+  intentionally not played (e.g., when the live PCM buffer is already >2s
+  ahead) or failed to enqueue into Web Audio.
+- **Stress failures by cause** – in stress mode, a small histogram of the most
+  common failure reasons, such as `HTTP 429` (rate limited at session creation),
+  `WS 503` (streaming queue full / gateway overloaded), or `WS transport error`
+  (WebSocket-level failures).
+- **Stress test summary** – shows how many synthetic sessions completed vs
+  failed for the latest stress run.
+
+**Backend / load metrics (from Prometheus)**
+
+These are sampled from `/metrics` during a stress run and rendered as text plus
+small sparklines:
+
+- **Active streams** – current `tts_active_streams` across providers (how many
+  streams the gateway believes are active).
+- **Sessions completed / failed** – cumulative session counters from the backend.
+- **Rate-limit usage** – `tts_rate_limit_max_bucket_usage` (0–100%), showing how
+  full the busiest per-IP rate-limit bucket is relative to its configured
+  maximum.
+- **Rate-limit window remaining** – seconds until the current IP's
+  rate-limit window resets (derived from
+  `tts_rate_limit_window_remaining_seconds`).
+- **Session queue depth** – number of streaming jobs currently queued in the
+  in-process streaming queue (not yet being processed by a worker).
+- **Session queue maxsize** – configured maximum queue size.
+- **Workers busy / total** – how many streaming worker tasks are currently
+  processing jobs vs the total configured worker count.
+- **Queue-full events** – total number of times the streaming queue was full
+  when a new stream was enqueued; these correspond to `WS 503` errors in stress
+  mode.
+
 ## Environment variables
 
 Backend provider configuration (`backend/app/config.py`):
@@ -107,6 +157,19 @@ Backend provider configuration (`backend/app/config.py`):
   - Coqui model identifier to load.
 - `COQUI_LANGUAGE` (default `"en-US"`)  
   - Language tag used with Coqui where applicable.
+
+Rate limiting and session queue configuration (`backend/app/config.py`):
+
+- `RATE_LIMIT_MAX_REQUESTS_PER_WINDOW` (default `50`)  
+  - Maximum number of `POST /v1/tts/sessions` allowed per IP within a single
+    rate-limit window.
+- `RATE_LIMIT_WINDOW_SECONDS` (default `60`)  
+  - Duration of the rate-limit window in seconds.
+- `SESSION_QUEUE_MAXSIZE` (default `100`)  
+  - Maximum number of session-creation requests that can be queued in memory.
+    When this queue is full, new session creation attempts return HTTP `503`.
+- `SESSION_QUEUE_WORKER_COUNT` (default `8`)  
+  - Number of background worker tasks that process the in-memory session queue.
 
 Frontend:
 
@@ -164,4 +227,3 @@ To add another TTS provider (e.g. a cloud API):
 
 - **In-memory storage**
   - Sessions are stored in memory, which is fine for local demos but does not survive restarts or support horizontal scaling in terms of a multi-instance, multi-cluster setting. A real deployment would replace this with persistent storage (e.g. Redis or a database).
-

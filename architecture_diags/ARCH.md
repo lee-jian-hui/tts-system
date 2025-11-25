@@ -42,6 +42,7 @@ For protocol-level flows and core logic diagrams, see:
 - `Core Services`
   - `AudioTranscodeService` wraps `ffmpeg` for on-the-fly encoding / resampling.
   - `TTSSessionRepository` and `VoiceRepository` provide session and voice catalog storage.
+  - A small in-memory **session queue + worker pool** smooths bursts of `POST /v1/tts/sessions` requests while bounding the amount of queued work; when the queue is full, new session creation attempts fail fast.
 
 ---
 
@@ -90,6 +91,8 @@ flowchart TD
         (ffmpeg)"]
         SESSREPO["TTSSessionRepository"]
         VOICEREPO["VoiceRepository"]
+        SESSQ["Session Queue +
+        Workers"]
     end
 
     subgraph Providers
@@ -101,7 +104,8 @@ flowchart TD
     C -- "POST /v1/tts/sessions " --> APIHTTP
     APIHTTP -- "session info {id: x , ws: y} " --> C
 
-    APIHTTP --> SVC
+    APIHTTP --> SESSQ
+    SESSQ --> SVC
     SVC --> SESSREPO
     SVC --> VOICEREPO
     SVC --> REG

@@ -14,6 +14,8 @@ from app.container import (
     get_tts_service,
     get_rate_limiter,
 )
+from app.config import settings
+from app.services.session_queue import configure_session_queue
 
 
 logger = get_logger(__name__)
@@ -61,12 +63,31 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def on_startup() -> None:
         # Force-init singletons so that failures surface at startup.
-        _ = get_provider_registry()
-        _ = get_session_repo()
-        _ = get_transcode_service()
-        _ = get_tts_service()
-        _ = get_rate_limiter()
-        logger.info("All singleton services initialized.")
+        provider_registry = get_provider_registry()
+        session_repo = get_session_repo()
+        transcode_service = get_transcode_service()
+        tts_service = get_tts_service()
+        rate_limiter = get_rate_limiter()
+        logger.info(
+            "All singleton services initialized "
+            "(providers=%d, sessions_repo=%s, transcode_service=%s, rate_limiter=%s)",
+            len(list(provider_registry.list_providers())),
+            type(session_repo).__name__,
+            type(transcode_service).__name__,
+            type(rate_limiter).__name__,
+        )
+
+        # Configure bounded session-creation queue and worker pool.
+        configure_session_queue(
+            tts_service=tts_service,
+            maxsize=settings.session_queue_maxsize,
+            worker_count=settings.session_queue_worker_count,
+        )
+        logger.info(
+            "Session queue ready (maxsize=%d, workers=%d)",
+            settings.session_queue_maxsize,
+            settings.session_queue_worker_count,
+        )
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:
@@ -87,4 +108,3 @@ def get_app() -> FastAPI:
 
 
 app = get_app()
-

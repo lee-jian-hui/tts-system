@@ -1,6 +1,6 @@
 # TTS Gateway – Approach, Design Choices, and Lessons Learned
 
-This write-up summarizes how I approached the TTS gateway assignment, the key architectural and implementation decisions I made, and what I learned while building and iterating on the system.
+This write-up summarizes how I approached the TTS gateway assignment, the key architectural and implementation decisions I made, and what I learned while building and iterating on the system as well as What kind of challenges I faced along the way.
 
 ## 1. Approach & Goals
 
@@ -21,6 +21,7 @@ At the same time, I intentionally constrained scope:
 The system is split into a backend gateway and a browser frontend.
 
 - **Backend (FastAPI)**
+  - Design in mainly the model,controller, service and repository pattern in terms of general segregation of components
   - `app.api` and `app.main` expose REST endpoints (`/v1/tts/sessions`, `/v1/voices`, `/healthz`, `/metrics`) and a WebSocket endpoint (`/v1/tts/stream/{session_id}`).
   - `TTSService` orchestrates provider streaming, retries, circuit-breaking, and session status updates.
   - Providers:
@@ -35,6 +36,8 @@ The system is split into a backend gateway and a browser frontend.
   - For `wav`/`mp3`, it monitors the stream, then fetches a full file via an HTTP endpoint and plays it with a standard `<audio>` element.
 
 This layout keeps the gateway logic concentrated in a small number of services, while the frontend is responsible for user experience and basic metrics display (bytes, latency, dropped frames).
+
+The front end is meant to be designed to be simple while the back end is meant to be designed to be as complex as the assignment needs it to be while keeping it extensible for future enhancements
 
 ## 3. Key Design Choices
 
@@ -124,6 +127,10 @@ Several aspects of the design aim at making it easy to extend:
 - **Configuration via env vars**: Provider flags and Coqui settings are read from environment variables, which is the same mechanism you’d use in a real deployment to control behavior across environments.
 
 These choices are intended to keep the codebase flexible if it were to grow into a multi-provider, production-grade gateway.
+
+In addition to rate limiting, I added a small, in-process **bounded session-creation queue**: `POST /v1/tts/sessions` requests are enqueued into an `asyncio.Queue` with a configurable max size and handled by a fixed pool of worker tasks that call `TTSService.create_session`. This lets the gateway smooth short bursts of session-creation traffic while still enforcing a hard cap on how much work can be queued in memory; when the queue is full, the API returns a `503 Gateway overloaded` error instead of allowing unbounded backlog growth.
+
+Later, I refined this queue to target the truly heavy work: **streaming** rather than `create_session`. WebSocket `stream_tts` requests now enqueue “stream this session” work items into a bounded in-process queue. A fixed worker pool (configurable worker count) pulls items and runs `TTSService.stream_session_audio`, performing provider synthesis, ffmpeg transcoding, and WebSocket sends on behalf of each client. This worker pool effectively acts as a concurrency limit (similar in effect to a semaphore) for active streams, while the queue size bounds how many additional streams can be waiting in memory; if both are saturated, new streams are rejected with a structured `503` error rather than silently starving.
 
 
 ### 3.7 Approach to Testing

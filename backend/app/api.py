@@ -99,13 +99,10 @@ async def create_session(
             status_code=429,
             detail="Rate limit exceeded for this client",
         )
-    from app.container import get_tts_service  # local to avoid cycles
-    from app.container import get_provider_registry
-
-    registry = get_provider_registry()
-
     try:
-        normalized_req = await _normalize_tts_request(req, registry)
+        normalized_req = await _normalize_tts_request(req, get_provider_registry())
+        # Session creation itself is cheap; we do it directly here and reserve
+        # the bounded queue / worker pool for the heavier streaming stage.
         session = get_tts_service().create_session(normalized_req)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -210,46 +207,25 @@ async def metrics() -> PlainTextResponse:
 @router.websocket("/v1/tts/stream/{session_id}")
 async def stream_tts(websocket: WebSocket, session_id: str) -> None:
     await websocket.accept()
-    tts_service = get_tts_service()
-    seq = 1
+    from app.services.session_queue import (
+        enqueue_stream_request,
+        SessionQueueFullError,
+    )
+
     try:
-        async for chunk in tts_service.stream_session_audio(session_id):
-            b64 = base64.b64encode(chunk).decode("ascii")
-            msg = AudioChunkMessage(type="audio", seq=seq, data=b64)
-            await websocket.send_json(msg.model_dump())
-            seq += 1
-        eos = EndOfStreamMessage(type="eos")
-        await websocket.send_json(eos.model_dump())
-    except WebSocketDisconnect:
-        # Client disconnected; nothing special to do.
-        return
-    except ValueError as exc:
-        # Unknown session or validation/transcoding error.
-        logger.error(
-            "WebSocket stream error for session %s: %s",
-            session_id,
-            exc,
-            exc_info=True,
+        await enqueue_stream_request(session_id, websocket)
+    except SessionQueueFullError:
+        # Queue is full; reject this stream with a clear error.
+        err = ErrorMessage(
+            type="error",
+            code=503,
+            message="gateway overloaded: too many streams queued",
         )
-        err = ErrorMessage(type="error", code=400, message=str(exc))
         try:
             await websocket.send_json(err.model_dump())
         except Exception:
             pass
-        await websocket.close(code=1011, reason=str(exc))
-    except Exception as exc:  # pragma: no cover - defensive
-        # Internal error; close with generic server error code.
-        logger.error(
-            "WebSocket internal error for session %s",
-            session_id,
-            exc_info=True,
-        )
-        err = ErrorMessage(type="error", code=500, message="internal error")
-        try:
-            await websocket.send_json(err.model_dump())
-        except Exception:
-            pass
-        await websocket.close(code=1011, reason="internal error")
+        await websocket.close(code=1013, reason="gateway overloaded")
 
 
 @router.get("/v1/tts/sessions/{session_id}/file")

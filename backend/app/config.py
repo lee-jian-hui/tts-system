@@ -11,9 +11,18 @@ class AppConfig:
     This keeps provider-specific knobs in one place so that provider
     registry and voice metadata can be controlled via .env.
     """
-    # TODO:
-    RATE_LIMIT_MAX_REQUESTS_PER_WINDOW = 10
-    RATE_LIMIT_WINDOW_SECONDS = 60
+    rate_limit_max_requests_per_window: int = int(
+        os.getenv("RATE_LIMIT_MAX_REQUESTS_PER_WINDOW", "50")
+    )
+    rate_limit_window_seconds: int = int(
+        os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")
+    )
+
+    # Bounded session-creation queue configuration.
+    session_queue_maxsize: int = int(os.getenv("SESSION_QUEUE_MAXSIZE", "5"))
+    session_queue_worker_count: int = int(
+        os.getenv("SESSION_QUEUE_WORKER_COUNT", "8")
+    )
 
     mock_tone_enabled: bool = os.getenv("MOCK_TONE_ENABLED", "1") != "0"
 

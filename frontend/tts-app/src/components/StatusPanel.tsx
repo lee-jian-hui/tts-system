@@ -30,6 +30,13 @@ interface Props {
   backendRateLimitUsage: number | null
   historyRateLimitUsage: number[]
   backendRateLimitWindowRemaining: number | null
+  queueDepth: number | null
+  queueMaxsize: number | null
+  workersBusy: number | null
+  workersTotal: number | null
+  queueFullTotal: number | null
+  historyQueueDepth: number[]
+  stressFailureReasons: Record<string, number>
 }
 
 export function StatusPanel({
@@ -61,6 +68,13 @@ export function StatusPanel({
   backendRateLimitUsage,
   historyRateLimitUsage,
   backendRateLimitWindowRemaining,
+  queueDepth,
+  queueMaxsize,
+  workersBusy,
+  workersTotal,
+  queueFullTotal,
+  historyQueueDepth,
+  stressFailureReasons,
 }: Props) {
   const renderSparkline = (data: number[]) => {
     if (!data.length) return null
@@ -150,6 +164,22 @@ export function StatusPanel({
           <span className="dot" />
         </div>
       )}
+      {Object.keys(stressFailureReasons).length > 0 && (
+        <div className="stress-failures">
+          <div className="stress-failures-title">
+            Stress failures by cause (top)
+          </div>
+          {Object.entries(stressFailureReasons)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([reason, count]) => (
+              <div key={reason} className="stress-failure-row">
+                <span className="stress-failure-reason">{reason}</span>
+                <span className="stress-failure-count">{count}</span>
+              </div>
+            ))}
+        </div>
+      )}
       {stressTotal > 0 && (
         <p>
           <strong>Stress test:</strong>{' '}
@@ -172,14 +202,18 @@ export function StatusPanel({
         backendRateLimitWindowRemaining != null ||
         historyStressInFlight.length > 0 ||
         historyActiveStreams.length > 0 ||
-        historyRateLimitUsage.length > 0) && (
+        historyRateLimitUsage.length > 0 ||
+        historyQueueDepth.length > 0) && (
         <div className="backend-metrics-container">
           <h3>Backend / load metrics</h3>
           {(backendActiveStreams != null ||
             backendSessionsCompleted != null ||
             backendSessionsFailed != null ||
             backendRateLimitUsage != null ||
-            backendRateLimitWindowRemaining != null) && (
+            backendRateLimitWindowRemaining != null ||
+            queueDepth != null ||
+            workersBusy != null ||
+            queueFullTotal != null) && (
             <p>
               {backendActiveStreams != null && (
                 <>
@@ -212,11 +246,27 @@ export function StatusPanel({
                   {backendRateLimitWindowRemaining.toFixed(0)}s
                 </>
               )}
+              {queueDepth != null && queueMaxsize != null && (
+                <>
+                  {', '}queue {queueDepth}/{queueMaxsize}
+                </>
+              )}
+              {workersBusy != null && workersTotal != null && (
+                <>
+                  {', '}workers {workersBusy}/{workersTotal} busy
+                </>
+              )}
+              {queueFullTotal != null && queueFullTotal > 0 && (
+                <>
+                  {', '}queue-full events {queueFullTotal}
+                </>
+              )}
             </p>
           )}
           {(historyStressInFlight.length > 0 ||
             historyActiveStreams.length > 0 ||
-            historyRateLimitUsage.length > 0) && (
+            historyRateLimitUsage.length > 0 ||
+            historyQueueDepth.length > 0) && (
             <div className="metrics-charts">
               {historyStressInFlight.length > 0 && (
                 <div className="metrics-chart">
@@ -238,6 +288,12 @@ export function StatusPanel({
                     Rate-limit usage (% of max bucket)
                   </div>
                   {renderSparkline(historyRateLimitUsage)}
+                </div>
+              )}
+              {historyQueueDepth.length > 0 && (
+                <div className="metrics-chart">
+                  <div className="metrics-chart-label">Session queue depth</div>
+                  {renderSparkline(historyQueueDepth)}
                 </div>
               )}
             </div>

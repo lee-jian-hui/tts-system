@@ -5,6 +5,12 @@ import { StatusPanel } from './components/StatusPanel'
 import { PlayerSection } from './components/PlayerSection'
 import { StressForm } from './components/StressForm'
 import { useBackendMetrics } from './hooks/useBackendMetrics'
+import {
+  STRESS_DEFAULT_CONCURRENCY,
+  STRESS_DEFAULT_SESSIONS,
+  STRESS_MAX_CONCURRENCY,
+  STRESS_MAX_SESSIONS,
+} from './config'
 import type { TargetFormat, VoiceInfo } from './types'
 
 const BASE_URL =
@@ -51,13 +57,17 @@ function App() {
   const [voicesError, setVoicesError] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [isStressRunning, setIsStressRunning] = useState(false)
-  const [stressSessions, setStressSessions] = useState(20)
-  const [stressConcurrency, setStressConcurrency] = useState(5)
+  const [stressSessions, setStressSessions] = useState(STRESS_DEFAULT_SESSIONS)
+  const [stressConcurrency, setStressConcurrency] =
+    useState(STRESS_DEFAULT_CONCURRENCY)
   const [stressTotal, setStressTotal] = useState(0)
   const [stressCompleted, setStressCompleted] = useState(0)
   const [stressFailed, setStressFailed] = useState(0)
   const [stressInFlight, setStressInFlight] = useState(0)
   const [stressMaxInFlight, setStressMaxInFlight] = useState(0)
+  const [stressFailureReasons, setStressFailureReasons] = useState<
+    Record<string, number>
+  >({})
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [droppedNetworkFrames, setDroppedNetworkFrames] = useState(0)
   const [droppedPlaybackFrames, setDroppedPlaybackFrames] = useState(0)
@@ -251,8 +261,11 @@ function App() {
       return
     }
 
-    const totalSessions = Math.min(Math.max(stressSessions, 1), 100)
-    const maxConcurrent = Math.min(Math.max(stressConcurrency, 1), 20)
+    const totalSessions = Math.min(Math.max(stressSessions, 1), STRESS_MAX_SESSIONS)
+    const maxConcurrent = Math.min(
+      Math.max(stressConcurrency, 1),
+      STRESS_MAX_CONCURRENCY,
+    )
 
     setToast('Starting stress test...')
     setStatus('Starting stress test...')
@@ -268,6 +281,7 @@ function App() {
     setIsStressRunning(true)
     setStressInFlight(0)
     setStressMaxInFlight(0)
+    setStressFailureReasons({})
 
     const runSingleSession = async () => {
       const randomText = `LOAD_TEST_${Math.random().toString(36).slice(2, 10)}`
@@ -287,6 +301,11 @@ function App() {
           body: JSON.stringify(payload),
         })
         if (!resp.ok) {
+          const reason = `HTTP ${resp.status}`
+          setStressFailureReasons((prev) => ({
+            ...prev,
+            [reason]: (prev[reason] ?? 0) + 1,
+          }))
           setStressFailed((n) => n + 1)
           return
         }
@@ -300,6 +319,14 @@ function App() {
         setStressCompleted((n) => n + 1)
       } catch (err) {
         console.error('Stress test session failed:', err)
+        const reason =
+          err instanceof Error && err.message
+            ? err.message
+            : 'stream error'
+        setStressFailureReasons((prev) => ({
+          ...prev,
+          [reason]: (prev[reason] ?? 0) + 1,
+        }))
         setStressFailed((n) => n + 1)
       }
     }
@@ -529,7 +556,7 @@ function App() {
         } catch (err) {
           console.error('Stress WS parse error:', err, event.data)
           ws.close()
-          reject(err)
+          reject(new Error('WS parse error'))
           return
         }
         if (msg.type === 'audio') {
@@ -550,14 +577,14 @@ function App() {
         } else if (msg.type === 'error') {
           console.error('Stress WS error from server:', msg)
           ws.close()
-          reject(new Error(msg.message))
+          reject(new Error(`WS ${msg.code}`))
         }
       }
 
       ws.onerror = (event) => {
         console.error('Stress WebSocket error', event)
         ws.close()
-        reject(new Error('WebSocket error during stress test'))
+        reject(new Error('WS transport error'))
       }
 
       ws.onclose = (event: CloseEvent) => {
@@ -638,6 +665,13 @@ function App() {
         backendRateLimitWindowRemaining={
           backendMetrics.rateLimitWindowRemaining
         }
+        queueDepth={backendMetrics.queueDepth}
+        queueMaxsize={backendMetrics.queueMaxsize}
+        workersBusy={backendMetrics.workersBusy}
+        workersTotal={backendMetrics.workersTotal}
+        queueFullTotal={backendMetrics.queueFullTotal}
+        historyQueueDepth={backendMetrics.historyQueueDepth}
+        stressFailureReasons={stressFailureReasons}
       />
 
       <PlayerSection targetFormat={targetFormat} audioUrl={audioUrl} />

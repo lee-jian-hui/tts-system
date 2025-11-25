@@ -128,3 +128,31 @@ def record_rate_limit_window_remaining(scope: str, remaining_seconds: float) -> 
     TTS_RATE_LIMIT_WINDOW_REMAINING_SECONDS.labels(scope=scope).set(
         max(0.0, remaining_seconds)
     )
+
+
+# Session queue / worker metrics
+
+TTS_SESSION_QUEUE_DEPTH = Gauge(
+    "tts_session_queue_depth",
+    "Current number of session-creation requests queued in memory.",
+)
+
+TTS_SESSION_QUEUE_MAXSIZE = Gauge(
+    "tts_session_queue_maxsize",
+    "Configured maximum size of the in-memory session-creation queue.",
+)
+
+TTS_SESSION_WORKERS_BUSY = Gauge(
+    "tts_session_workers_busy",
+    "Current number of busy session-creation worker tasks.",
+)
+
+TTS_SESSION_WORKERS_TOTAL = Gauge(
+    "tts_session_workers_total",
+    "Total number of session-creation worker tasks configured.",
+)
+
+TTS_SESSION_QUEUE_FULL_TOTAL = Counter(
+    "tts_session_queue_full_total",
+    "Total number of times the session queue was full when enqueuing.",
+)

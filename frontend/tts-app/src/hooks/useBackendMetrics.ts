@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { METRICS_POLL_INTERVAL_MS } from '../config'
 
 interface BackendMetricsState {
   activeStreams: number | null
@@ -6,9 +7,15 @@ interface BackendMetricsState {
   sessionsFailed: number | null
   rateLimitUsage: number | null
   rateLimitWindowRemaining: number | null
+  queueDepth: number | null
+  queueMaxsize: number | null
+  workersBusy: number | null
+  workersTotal: number | null
+  queueFullTotal: number | null
   historyActiveStreams: number[]
   historyRateLimitUsage: number[]
   historyStressInFlight: number[]
+  historyQueueDepth: number[]
 }
 
 /**
@@ -26,9 +33,15 @@ export function useBackendMetrics(
     sessionsFailed: null,
     rateLimitUsage: null,
     rateLimitWindowRemaining: null,
+    queueDepth: null,
+    queueMaxsize: null,
+    workersBusy: null,
+    workersTotal: null,
+    queueFullTotal: null,
     historyActiveStreams: [],
     historyRateLimitUsage: [],
     historyStressInFlight: [],
+    historyQueueDepth: [],
   })
 
   useEffect(() => {
@@ -45,6 +58,11 @@ export function useBackendMetrics(
         let sessionsFailed = 0
         let rateLimitUsage: number | null = null
         let rateLimitWindowRemaining: number | null = null
+        let queueDepth: number | null = null
+        let queueMaxsize: number | null = null
+        let workersBusy: number | null = null
+        let workersTotal: number | null = null
+        let queueFullTotal: number | null = null
 
         const lines = text.split('\n')
         for (const line of lines) {
@@ -77,6 +95,36 @@ export function useBackendMetrics(
             if (!Number.isNaN(value)) {
               rateLimitWindowRemaining = value
             }
+          } else if (line.startsWith('tts_session_queue_depth')) {
+            const parts = line.trim().split(/\s+/)
+            const value = Number.parseFloat(parts[parts.length - 1])
+            if (!Number.isNaN(value)) {
+              queueDepth = value
+            }
+          } else if (line.startsWith('tts_session_queue_maxsize')) {
+            const parts = line.trim().split(/\s+/)
+            const value = Number.parseFloat(parts[parts.length - 1])
+            if (!Number.isNaN(value)) {
+              queueMaxsize = value
+            }
+          } else if (line.startsWith('tts_session_workers_busy')) {
+            const parts = line.trim().split(/\s+/)
+            const value = Number.parseFloat(parts[parts.length - 1])
+            if (!Number.isNaN(value)) {
+              workersBusy = value
+            }
+          } else if (line.startsWith('tts_session_workers_total')) {
+            const parts = line.trim().split(/\s+/)
+            const value = Number.parseFloat(parts[parts.length - 1])
+            if (!Number.isNaN(value)) {
+              workersTotal = value
+            }
+          } else if (line.startsWith('tts_session_queue_full_total')) {
+            const parts = line.trim().split(/\s+/)
+            const value = Number.parseFloat(parts[parts.length - 1])
+            if (!Number.isNaN(value)) {
+              queueFullTotal = value
+            }
           }
         }
 
@@ -107,6 +155,15 @@ export function useBackendMetrics(
               ? nextHistoryRate.slice(nextHistoryRate.length - 30)
               : nextHistoryRate
 
+          const nextHistoryQueue =
+            queueDepth != null
+              ? [...prev.historyQueueDepth, queueDepth]
+              : prev.historyQueueDepth
+          const trimmedQueue =
+            nextHistoryQueue.length > 30
+              ? nextHistoryQueue.slice(nextHistoryQueue.length - 30)
+              : nextHistoryQueue
+
           return {
             activeStreams,
             sessionsCompleted,
@@ -116,6 +173,12 @@ export function useBackendMetrics(
             historyActiveStreams: trimmedActive,
             historyStressInFlight: trimmedStress,
             historyRateLimitUsage: trimmedRate,
+            queueDepth,
+            queueMaxsize,
+            workersBusy,
+            workersTotal,
+            queueFullTotal,
+            historyQueueDepth: trimmedQueue,
           }
         })
       } catch {
@@ -126,7 +189,7 @@ export function useBackendMetrics(
     void pollMetrics()
     const id = window.setInterval(() => {
       void pollMetrics()
-    }, 2000)
+    }, METRICS_POLL_INTERVAL_MS)
 
     return () => {
       window.clearInterval(id)

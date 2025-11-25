@@ -7,10 +7,7 @@ from app.repositories import InMemoryTTSSessionRepository
 from app.services import TTSService, AudioTranscodeService
 from app.services.circuit_breaker import CircuitBreakerRegistry
 from app.services.rate_limiter import RateLimiter, RateLimitConfig
-from app.config import AppConfig
-
-
-
+from app.config import settings
 
 @lru_cache(maxsize=1)
 def get_provider_registry() -> ProviderRegistry:
@@ -36,13 +33,12 @@ def get_circuit_breaker_registry() -> CircuitBreakerRegistry:
 def get_rate_limiter() -> RateLimiter:
     """Return the process-wide IP-based RateLimiter.
 
-    The limits are defined by RATE_LIMIT_MAX_REQUESTS_PER_WINDOW and
-    RATE_LIMIT_WINDOW_SECONDS constants above so they are easy to tune
-    in one place.
+    The limits are defined in AppConfig so they can be tuned via
+    environment variables.
     """
     config = RateLimitConfig(
-        max_requests_per_window=AppConfig.RATE_LIMIT_MAX_REQUESTS_PER_WINDOW,
-        window_seconds=AppConfig.RATE_LIMIT_WINDOW_SECONDS,
+        max_requests_per_window=settings.rate_limit_max_requests_per_window,
+        window_seconds=settings.rate_limit_window_seconds,
     )
     return RateLimiter(config=config)
 

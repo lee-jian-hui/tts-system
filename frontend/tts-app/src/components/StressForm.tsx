@@ -1,4 +1,8 @@
 import type { FormEvent } from 'react'
+import {
+  STRESS_MAX_CONCURRENCY,
+  STRESS_MAX_SESSIONS,
+} from '../config'
 
 interface Props {
   isBusy: boolean
@@ -31,7 +35,7 @@ export function StressForm({
           id="stress-sessions"
           type="number"
           min={1}
-          max={100}
+          max={STRESS_MAX_SESSIONS}
           value={sessions === 0 ? '' : sessions}
           onChange={(e) => {
             const raw = e.target.value
@@ -47,7 +51,7 @@ export function StressForm({
           id="stress-concurrency"
           type="number"
           min={1}
-          max={20}
+          max={STRESS_MAX_CONCURRENCY}
           value={concurrency === 0 ? '' : concurrency}
           onChange={(e) => {
             const raw = e.target.value

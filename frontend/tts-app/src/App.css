@@ -210,6 +210,32 @@ body {
   width: 100%;
 }
 
+.stress-failures {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #374151;
+  font-size: 0.8rem;
+}
+
+.stress-failures-title {
+  margin-bottom: 0.2rem;
+  color: #9ca3af;
+}
+
+.stress-failure-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.stress-failure-reason {
+  color: #e5e7eb;
+}
+
+.stress-failure-count {
+  color: #a5b4fc;
+}
+
 .streaming-indicator {
   display: flex;
   gap: 0.25rem;
